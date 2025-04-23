@@ -1,6 +1,8 @@
 const { uploadImage, deleteFileFromGCP } = require('../services/gcpStorageService');
 const FatigueLog = require('../models/FatigueLog');
 const DriverSession = require('../models/DriverSession');
+const fatigueService = require('../services/fatigueService');
+
 
 exports.detectFatigue = async (req, res) => {
   const { sessionId, image, ear, headPose } = req.body;
@@ -39,4 +41,20 @@ exports.deleteRecentImages = async (req, res) => {
   }
 
   res.json({ deletedCount: logs.length });
+};
+
+
+exports.detectFatigue = async (req, res) => {
+  try {
+    const result = await fatigueService.processFatigue({
+      userId: req.user.id,
+      sessionId: req.body.sessionId,
+      image: req.body.image,
+      ear: req.body.ear,
+      headPose: req.body.headPose
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to process fatigue log' });
+  }
 };
