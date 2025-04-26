@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middlewares/auth');
 const userController = require('../controllers/userController');
+const auth = require('../middlewares/auth');
 
-router.get('/', auth, userController.getAllUsers);
-router.get('/:id', auth, userController.getUserById);
-router.put('/:id', auth, userController.updateUser);
-router.delete('/:id', auth, userController.deleteUser);
+// ניהול משתמשים רק למשתמש עצמו
+router.get('/me', auth, userController.getCurrentUser); // מידע אישי של המשתמש
+router.put('/me', auth, userController.updateUser);     // עדכון אישי
+router.delete('/me', auth, userController.deleteUser);   // מחיקה
 
 module.exports = router;
