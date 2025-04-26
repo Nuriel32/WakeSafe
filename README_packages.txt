@@ -1,0 +1,10 @@
+npm install express
+npm install mongoose
+npm install dotenv
+npm install bcrypt
+npm install jsonwebtoken
+npm install uuid
+npm install ioredis
+npm install axios
+npm install @google-cloud/storage
+npm install express-rate-limit

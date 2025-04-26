@@ -3,7 +3,7 @@ const User = require('../models/User');
 const cache = require('../services/cacheService');
 
 const generateToken = (user) =>
-  jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
 /**
  * @route POST /api/auth/register
@@ -75,3 +75,4 @@ exports.logout = async (req, res) => {
 
   res.json({ message: 'Logout successful' });
 };
+מ
