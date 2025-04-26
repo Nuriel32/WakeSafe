@@ -1,13 +1,20 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcrypt');
-const redis = require('../config/redis');
+const cache = require('../services/cacheService');
 const User = require('../models/User');
 const DriverSession = require('../models/DriverSession');
 
-const generateToken = (user, jti) =>
-    jwt.sign({ id: user._id, jti }, process.env.JWT_SECRET, { expiresIn: '1h' });
+// פונקציה פנימית ליצירת JWT
+function generateToken(user, jti) {
+  return jwt.sign({ id: user._id, jti }, process.env.JWT_SECRET, { expiresIn: '1h' });
+}
 
+/**
+ * @route POST /api/auth/register
+ * @desc Register a new user and create a driver session
+ * @access Public
+ */
 async function register(req, res) {
   const { firstName, lastName, email, password, phone, carNumber } = req.body;
 
@@ -39,13 +46,14 @@ async function register(req, res) {
       carNumber
     });
 
+    // יצירת DriverSession חדש
     await DriverSession.create({ userId: user._id });
 
     const jti = uuidv4();
     const token = generateToken(user, jti);
 
-    await redis.set(`token:${user._id}`, token, 'EX', 3600);
-    await redis.set(`jti:${user._id}`, jti, 'EX', 3600);
+    await cache.setInCache(`token:${user._id}`, token, 3600);
+    await cache.setInCache(`jti:${user._id}`, jti, 3600);
 
     res.status(201).json({ token });
   } catch (error) {
@@ -54,19 +62,25 @@ async function register(req, res) {
   }
 }
 
+/**
+ * @route POST /api/auth/login
+ * @desc Authenticate user and return a JWT token
+ * @access Public
+ */
 async function login(req, res) {
   const { email, password } = req.body;
 
   try {
     const user = await User.findOne({ email });
-    if (!user || !(await user.comparePassword(password)))
+    if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ message: 'Invalid credentials' });
+    }
 
     const jti = uuidv4();
     const token = generateToken(user, jti);
 
-    await redis.set(`token:${user._id}`, token, 'EX', 3600);
-    await redis.set(`jti:${user._id}`, jti, 'EX', 3600);
+    await cache.setInCache(`token:${user._id}`, token, 3600);
+    await cache.setInCache(`jti:${user._id}`, jti, 3600);
 
     res.json({ token });
   } catch (error) {
@@ -75,13 +89,18 @@ async function login(req, res) {
   }
 }
 
+/**
+ * @route POST /api/auth/logout
+ * @desc Logout and invalidate JWT
+ * @access Private
+ */
 async function logout(req, res) {
   const jti = req.user.jti;
   if (!jti) return res.status(400).json({ message: "Missing token ID" });
 
-  await redis.set(`blacklist:${jti}`, '1', 'EX', 3600);
-  await redis.del(`token:${req.user.id}`);
-  await redis.del(`jti:${req.user.id}`);
+  await cache.blacklistToken(jti);
+  await cache.deleteFromCache(`token:${req.user.id}`);
+  await cache.deleteFromCache(`jti:${req.user.id}`);
 
   res.json({ message: 'Logout successful' });
 }

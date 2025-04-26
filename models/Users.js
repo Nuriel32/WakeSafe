@@ -2,9 +2,12 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const userSchema = new mongoose.Schema({
-  name: String,
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
   email: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
+  password: { type: String, required: true }, // הסיסמה תוצפן אוטומטית
+  phone: { type: String, required: true },
+  carNumber: { type: String, required: true },
   joinDate: { type: Date, default: Date.now }
 });
 
