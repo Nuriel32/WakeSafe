@@ -1,14 +1,12 @@
 const mongoose = require('mongoose');
 
-const sessionSchema = new mongoose.Schema({
+const driverSessionSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   startTime: { type: Date, default: Date.now },
-  endTime: Date,
-  stats: {
-    blinksPerSecond: Number,
-    earReadings: [{ value: Number, timestamp: Date }],
-    headPoseData: [{ pitch: Number, yaw: Number, roll: Number, timestamp: Date }]
-  }
-});
+  endTime: { type: Date },
+  isActive: { type: Boolean, default: true },
+  totalImagesUploaded: { type: Number, default: 0 },
+  photos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Photo' }]
+}, { timestamps: true });
 
-module.exports = mongoose.model('DriverSession', sessionSchema);
+module.exports = mongoose.model('DriverSession', driverSessionSchema);

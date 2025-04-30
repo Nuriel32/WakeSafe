@@ -24,5 +24,8 @@ app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/trips', require('./routes/tripRoute')); // trip as driver session
 app.use('/api/fatigue', require('./routes/fatigueRoutes'));
 app.use('/api/location', require('./routes/locationRoutes'));
+app.use('/api/upload', require('./routes/uploadRoutes'));
+app.use('/api/photos', require('./routes/photoRoutes'));
+
 
 module.exports = app;
