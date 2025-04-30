@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcrypt');
 const cache = require('../services/cacheService');
-const User = require('../models/User');
+const User = require('../models/Users');
 const DriverSession = require('../models/DriverSession');
 
 // פונקציה פנימית ליצירת JWT
@@ -35,13 +35,11 @@ async function register(req, res) {
   }
 
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-
     const user = await User.create({
       firstName,
       lastName,
       email,
-      password: hashedPassword,
+      password,
       phone,
       carNumber
     });
