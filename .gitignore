@@ -42,5 +42,4 @@ coverage/
 # Redis dump (אם שומרים state)
 dump.rdb
 
-
-cred
+cred/*.json
