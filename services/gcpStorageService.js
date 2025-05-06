@@ -1,8 +1,19 @@
+require('dotenv').config(); // ✅ קודם כל טען את המשתנים מהסביבה
+
 const { Storage } = require('@google-cloud/storage');
 const crypto = require('crypto');
+const path = require('path');
 
-const storage = new Storage();
 const bucketName = process.env.GCS_BUCKET;
+
+if (!bucketName) {
+  throw new Error('❌ GCS_BUCKET environment variable is missing.');
+}
+
+const storage = new Storage({
+  keyFilename: path.join(__dirname, '../config/gcp-key.json'), // אם צריך credentials ידניים
+});
+
 const bucket = storage.bucket(bucketName);
 
 /**
@@ -22,7 +33,7 @@ async function uploadFile(file, userId, sessionId) {
   return new Promise((resolve, reject) => {
     blobStream.on('finish', () => {
       resolve({
-        gcsPath, // Return GCS internal path
+        gcsPath,
         smartName,
         publicUrl: `https://storage.googleapis.com/${bucket.name}/${blob.name}`
       });
@@ -30,44 +41,27 @@ async function uploadFile(file, userId, sessionId) {
   });
 }
 
-/**
- * Return a readable stream for a file in the bucket
- */
 async function getFileStream(gcsPath) {
   const file = bucket.file(gcsPath);
   return file.createReadStream();
 }
 
-/**
- * Delete a file from GCS by path
- */
 async function deleteFile(gcsPath) {
   await bucket.file(gcsPath).delete();
 }
 
-/**
- * Generate a signed URL for downloading a file
- */
 async function generateSignedUrl(gcsPath) {
   const file = bucket.file(gcsPath);
   const [url] = await file.getSignedUrl({
     version: 'v4',
     action: 'read',
-    expires: Date.now() + 1000 * 60 * 60 // 1 hour
+    expires: Date.now() + 1000 * 60 * 60
   });
   return url;
 }
 
-/**
- * Generate signed URLs for multiple GCS paths
- */
 async function generateSignedUrls(paths) {
-  const signedUrls = [];
-  for (const path of paths) {
-    const url = await generateSignedUrl(path);
-    signedUrls.push(url);
-  }
-  return signedUrls;
+  return Promise.all(paths.map(generateSignedUrl));
 }
 
 module.exports = {

@@ -1,6 +1,6 @@
-const Photo = require('../models/Photo');
+const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
-const { deleteFile } = require('../services/gcpStorage');
+const { deleteFile } = require('../services/gcpStorageService');
 
 /**
  * Internal logic: deletes a single photo from GCS, MongoDB, and session reference.

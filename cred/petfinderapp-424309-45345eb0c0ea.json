@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "petfinderapp-424309",
+  "private_key_id": "45345eb0c0eaf2ea67d25d8a894f2853db950c1c",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDdtBjJ+d04O5c7\ncOWn2bpcVPYhPhRVrnZaL96lZcqaPogLF3usn5sDfRZMBM6zhrRYk3h82llVdQG7\n0qFDkMa9m5wqV7gTNT/SVt8/lyhl58kgzA1wGUYW9+/OoZlW11+1A6C7laH4AQsx\ngqmY1n2kaYTcCZN+w1n2G2wquhamhAgpXAVWcDMz+0jBseAOWWT2ofidBJtOGhUs\ns9GN/VENjE8uilOUS5nxnc0W9BQRwGW8misptZ2XQ+KRhtbt8jcBmt9jEnycZLbM\nTftFi6423jusIVcVxyAL2EDrtmceVTnA28wcbImi/QJNOST4t24zHbjbcAdKi1mO\nRF0ZDlpVAgMBAAECggEAAMo2+mU/AgfIUqhk0RPIA7Mzy0uG1AVSm6CnCOzTa3hE\nkNGNGcDZ0wnbjfrIZ8BXnSctWziF7/WCQ5KNC4oVAzDuPgJhAASFDTFNC1N1C+Pn\nBgxkEd2tL8DDZHeT7cjHqQPxyylN0e3jBdKi2w4MlYzgsc4A7gcxJ1zSplZSZVZ6\nY2WFPh6xguNjSQGyh9G2AUS9cLjmOstmJhA0HzLYNNR0id+sWibRD0oABXaB8vuU\nZD1NUP/Gl53pbXFdTDGgTHWRTj3Tpmy4KDws4yROmJ3oJHFkOKnX3Zx6hOd9H7X5\nkexX2bsSi8mBot8UtrRQmVj4zOP+xoTv7JvCl1bFsQKBgQD+vzacGH3fyaaWgyS8\nZhz1KVbcV/KLPTlW5paPKU3tCGfuNlHY6FFOqjrXBYcBOP07UesOu9peHkG92gpX\nXBEYtiyXmDg3ki9r4R9odhatuig5oYJJuD//RFgSJVfrH8ZxwPfGRezy+M1md+wA\nMQ5RB+o9REu+zbXwHIC+JFrd/QKBgQDey0YmNctC4WV/7XCX2mdjN18qBANQieJz\nNu1dXH/NoKXkuGZHVbp5Ncd8aaa6mbCqV0kWnf7Hif9amQQu7GmfkkroEfiJ1bnc\nyNSJsRgZPR5tGe7oB2SPj8HSQswW6RIJWD4sISKkhfLYRFgDk41fUgtNsa2xuOZ3\npaObjuOxOQKBgQC25PmEIGFe5hvgO8+II5fuu/tMvye3qAEezvaRWgpEf6B+eilR\nHZoibD1KWwGOcyf8CthD/8LLh9WTRJPgHI15vHFPdU4HN8EsJrix+vZVTC3NEpPD\n8bCgyKSigoUYnfuPeAdsJo/z8YUmaDrb+Fxa+N/HlNz85BwXg5865EcI0QKBgQCd\nCmWY+2QZ8WytHr21nBIyIk6m/AsmEvsWwUnQ/Clt1OX6cWxOrgPx+lFxxbrrXvfj\nKgFvutBi8EeZIbCMLsJI40J/kGNDLO6EzN7ba4QUDjvLJXN8A/IDK46wWbsoDwNS\nqOuyCW000OIbRRlQ9Am7fcZP7oUDd9Sj05KeTLr8KQKBgQDct4KXQ0glPsZrNmnl\nkZBIYOTC5x+I2kD5gOCOQy/oa1UisVtWF648Ii4mqeFEmFVIDYM345TGg/qUUMyh\nSpBmGJ6D4UaPAxid7FEO6SxFMWJ0sDkpPFQHLK5YhyDOiIawE6XAD63vT5bQEKOe\nUwADyPT3pSYWGlAPRbMVdqRSSw==\n-----END PRIVATE KEY-----\n",
+  "client_email": "wakesafaeaccount@petfinderapp-424309.iam.gserviceaccount.com",
+  "client_id": "106602343269383590006",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/wakesafaeaccount%40petfinderapp-424309.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
