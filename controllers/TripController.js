@@ -1,6 +1,7 @@
 const Trip = require('../models/DriverSession');
 const ImageLog = require('../models/ImageLog');
 const { uploadImage, deleteFileFromGCP } = require('../services/gcpStorageService');
+const logger = require('../utils/logger');
 
 /**
  * @route   POST /api/trips
@@ -8,9 +9,15 @@ const { uploadImage, deleteFileFromGCP } = require('../services/gcpStorageServic
  * @access  Private
  */
 exports.createTrip = async (req, res) => {
-  const trip = new Trip({ userId: req.user.id });
-  await trip.save();
-  res.status(201).json({ tripId: trip._id });
+  try {
+    const trip = new Trip({ userId: req.user.id });
+    await trip.save();
+    logger.info(`Trip created for user ${req.user.id}, Trip ID: ${trip._id}`);
+    res.status(201).json({ tripId: trip._id });
+  } catch (err) {
+    logger.error(`Failed to create trip for user ${req.user.id}: ${err.message}`);
+    res.status(500).json({ error: 'Failed to create trip' });
+  }
 };
 
 /**
@@ -22,32 +29,39 @@ exports.createTrip = async (req, res) => {
 exports.detectFatigue = async (req, res) => {
   const { image, ear, headPose, tripId } = req.body;
   if (!image || !ear || !headPose || !tripId) {
+    logger.warn(`Fatigue detection missing data for user ${req.user.id}`);
     return res.status(400).json({ error: "Missing required data" });
   }
 
-  const filename = `fatigue-${Date.now()}.jpg`;
-  const url = await uploadImage(image, filename);
+  try {
+    const filename = `fatigue-${Date.now()}.jpg`;
+    const url = await uploadImage(image, filename);
 
-  const log = new ImageLog({
-    tripId,
-    userId: req.user.id,
-    imageId: filename,
-    url,
-    timestamp: new Date()
-  });
+    const log = new ImageLog({
+      tripId,
+      userId: req.user.id,
+      imageId: filename,
+      url,
+      timestamp: new Date()
+    });
 
-  await log.save();
+    await log.save();
 
-  await Trip.findByIdAndUpdate(tripId, {
-    $push: {
-      'stats.earReadings': { value: ear, timestamp: new Date() },
-      'stats.headPoseData': { ...headPose, timestamp: new Date() }
-    }
-  });
+    await Trip.findByIdAndUpdate(tripId, {
+      $push: {
+        'stats.earReadings': { value: ear, timestamp: new Date() },
+        'stats.headPoseData': { ...headPose, timestamp: new Date() }
+      }
+    });
 
-  const isFatigued = ear < 0.2 || Math.abs(headPose.pitch) > 15;
+    const isFatigued = ear < 0.2 || Math.abs(headPose.pitch) > 15;
+    logger.info(`Fatigue detection processed for user ${req.user.id} (fatigued: ${isFatigued})`);
 
-  res.json({ fatigued: isFatigued, url });
+    res.json({ fatigued: isFatigued, url });
+  } catch (err) {
+    logger.error(`Fatigue detection failed for user ${req.user.id}: ${err.message}`);
+    res.status(500).json({ error: 'Fatigue detection failed' });
+  }
 };
 
 /**
@@ -57,16 +71,23 @@ exports.detectFatigue = async (req, res) => {
  */
 exports.deleteImagesFromLastMinute = async (req, res) => {
   const cutoff = new Date(Date.now() - 60 * 1000);
-  const images = await ImageLog.find({
-    userId: req.user.id,
-    timestamp: { $gte: cutoff }
-  });
 
-  for (const image of images) {
-    const filename = image.url.split('/').pop();
-    await deleteFileFromGCP(filename);
-    await ImageLog.findByIdAndDelete(image._id);
+  try {
+    const images = await ImageLog.find({
+      userId: req.user.id,
+      timestamp: { $gte: cutoff }
+    });
+
+    for (const image of images) {
+      const filename = image.url.split('/').pop();
+      await deleteFileFromGCP(filename);
+      await ImageLog.findByIdAndDelete(image._id);
+    }
+
+    logger.info(`Deleted ${images.length} image(s) from last minute for user ${req.user.id}`);
+    res.json({ deletedCount: images.length });
+  } catch (err) {
+    logger.error(`Failed to delete recent images for user ${req.user.id}: ${err.message}`);
+    res.status(500).json({ error: 'Failed to delete recent images' });
   }
-
-  res.json({ deletedCount: images.length });
 };

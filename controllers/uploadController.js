@@ -1,8 +1,7 @@
-// ======================= CONTROLLER: controllers/uploadController.js =======================
-
 const { uploadFile } = require('../services/gcpStorageService.js');
 const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
+const logger = require('../utils/logger');
 
 /**
  * Handles photo upload from the client
@@ -18,6 +17,7 @@ async function uploadPhoto(req, res) {
         const session = req.session;
 
         if (!file || !sessionId) {
+            logger.warn(`Upload attempt missing file or sessionId. User: ${userId}`);
             return res.status(400).json({ error: 'Missing photo or sessionId' });
         }
 
@@ -34,9 +34,10 @@ async function uploadPhoto(req, res) {
         session.photos.push(photo._id);
         await session.save();
 
+        logger.info(`Photo uploaded by user ${userId} to session ${sessionId}. Photo ID: ${photo._id}`);
         res.status(201).json({ message: 'Photo uploaded', photoId: photo._id });
     } catch (err) {
-        console.error('Upload failed:', err);
+        logger.error(`Photo upload failed for user ${req.user?.id}: ${err.message}`);
         res.status(500).json({ error: 'Upload failed' });
     }
 }

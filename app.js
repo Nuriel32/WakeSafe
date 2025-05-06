@@ -1,6 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
+const requestLogger = require('./middlewares/requestLogger');
 
 // הגדרות סביבה
 dotenv.config();
@@ -12,6 +13,7 @@ connectDB();
 const app = express();
 
 app.use(express.json());
+app.use(requestLogger);
 
 // Rate Limiter (אם יש)
 const rateLimiter = require('./middlewares/rateLimit');
