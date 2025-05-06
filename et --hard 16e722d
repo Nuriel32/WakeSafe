@@ -1,0 +1,14 @@
+[33m90ca936[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{0}: reset: moving to HEAD~1
+[33m16e722d[m HEAD@{1}: commit: Add structured logging across all controllers with Winston
+[33m90ca936[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{2}: commit: Add structured logging across all controllers with Winston
+[33m9f081f3[m HEAD@{3}: commit: 🔐 Remove service account key and ignore it
+[33mfbce525[m HEAD@{4}: commit: 🔐 Remove service account key and ignore it
+[33m2a248f4[m HEAD@{5}: commit: stock tracking cred directory
+[33m169eb8f[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{6}: commit: ✨ Upload & photo deletion system: added upload endpoint, delete single/multiple photo controllers, GCS integration, and MongoDB linkage
+[33mf7b1f21[m HEAD@{7}: commit: chore(gitignore): ignore environment, logs, node_modules and sensitive cloud files
+[33meb87a94[m HEAD@{8}: commit: refactor(controllers): rewrite as function declarations with clean module exports
+[33m2ce4535[m HEAD@{9}: commit: feat(auth): structure full auth and user management under /api/auth routes
+[33ma3deeab[m HEAD@{10}: commit: feat(location): implement Google Maps navigation service with session-based validation
+[33mfd5e177[m HEAD@{11}: commit: feat(auth): implement Redis-based token blacklist middleware and extend cache service with blacklist support
+[33m3e6f1d7[m HEAD@{12}: commit: feat(auth): implement token blacklist with jti + session tracking for multi-device logins
+[33m64db274[m HEAD@{13}: clone: from https://github.com/Nuriel32/WakeSafe
