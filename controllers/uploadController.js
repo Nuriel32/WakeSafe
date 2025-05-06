@@ -1,7 +1,7 @@
 // ======================= CONTROLLER: controllers/uploadController.js =======================
 
-const { uploadFile } = require('../services/gcpStorage');
-const Photo = require('../models/Photo');
+const { uploadFile } = require('../services/gcpStorageService.js');
+const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 
 /**

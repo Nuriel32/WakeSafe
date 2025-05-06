@@ -1,3 +1,4 @@
+
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -5,8 +6,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const auth = require('../middlewares/auth');
 const checkTokenRevoked = require('../middlewares/checkTokenRevoked');
-const validateSessionOwnership = require('../middlewares/validateSessionOwnership');
-
+const validateSessionViaCache = require('../middlewares/validateSessionViaCache');
 const { uploadPhoto } = require('../controllers/uploadController');
 
 /**
@@ -19,7 +19,7 @@ router.post(
     auth,
     checkTokenRevoked,
     upload.single('photo'),
-    validateSessionOwnership,
+    validateSessionViaCache,
     uploadPhoto
 );
 
