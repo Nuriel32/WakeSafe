@@ -39,3 +39,4 @@ exports.validateSessionOwner = async (sessionId, userId) => {
     const cachedUserId = await redis.get(`session:${sessionId}`);
     return cachedUserId === userId;
 };
+

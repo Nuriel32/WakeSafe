@@ -1,117 +1,67 @@
-const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
-const bcrypt = require('bcrypt');
-const cache = require('../services/cacheService');
-const User = require('../models/Users');
+const Photo = require('../models/Photo');
 const DriverSession = require('../models/DriverSession');
+const { deleteFile } = require('../services/gcpStorageService');
 const logger = require('../utils/logger');
 
-// פונקציה פנימית ליצירת JWT
-function generateToken(user, jti) {
-    return jwt.sign({ id: user._id, jti }, process.env.JWT_SECRET, { expiresIn: '1h' });
-}
-
 /**
- * @route POST /api/auth/register
- * @desc Register a new user and create a driver session
- * @access Public
+ * Internal logic: deletes a single photo from GCS, MongoDB, and session reference.
+ * Used by: photoApiController
  */
-async function register(req, res) {
-    const { firstName, lastName, email, password, phone, carNumber } = req.body;
-
-    if (!firstName || !lastName || !email || !password || !phone || !carNumber) {
-        return res.status(400).json({ message: 'Missing required fields' });
+async function deleteSinglePhoto(photoId) {
+    const photo = await Photo.findById(photoId);
+    if (!photo) {
+        logger.warn(`Photo not found for ID: ${photoId}`);
+        throw new Error('Photo not found');
     }
 
-    if (!/\S+@\S+\.\S+/.test(email)) {
-        return res.status(400).json({ message: 'Invalid email format' });
-    }
-
-    if (!/^05\d{8}$/.test(phone)) {
-        return res.status(400).json({ message: 'Invalid phone number format' });
-    }
-
-    if (!/^\d{7,8}$/.test(carNumber)) {
-        return res.status(400).json({ message: 'Invalid car number format' });
+    const session = await DriverSession.findById(photo.sessionId);
+    if (!session) {
+        logger.warn(`Session not found for photo ID: ${photoId}`);
+        throw new Error('Associated session not found');
     }
 
     try {
-        const user = await User.create({
-            firstName,
-            lastName,
-            email,
-            password,
-            phone,
-            carNumber
-        });
-
-        await DriverSession.create({ userId: user._id });
-
-        const jti = uuidv4();
-        const token = generateToken(user, jti);
-
-        await cache.setInCache(`token:${user._id}`, token, 3600);
-        await cache.setInCache(`jti:${user._id}`, jti, 3600);
-
-        logger.info(`User registered successfully: ${email}`);
-        res.status(201).json({ token });
-    } catch (error) {
-        logger.error(`Registration failed for email ${email}: ${error.message}`);
-        res.status(400).json({ message: 'Registration failed, email might already exist' });
+        await deleteFile(photo.gcsPath);
+        logger.info(`Deleted photo file from GCS: ${photo.gcsPath}`);
+    } catch (err) {
+        logger.error(`Failed to delete GCS file: ${photo.gcsPath}`, err);
     }
+
+    // Remove reference in session
+    session.photos.pull(photo._id);
+    session.totalImagesUploaded = Math.max(0, session.totalImagesUploaded - 1);
+    await session.save();
+    logger.info(`Removed photo ${photoId} from session ${session._id}`);
+
+    await Photo.deleteOne({ _id: photo._id });
+    logger.info(`Deleted photo document ${photoId} from MongoDB`);
+
+    return true;
 }
 
 /**
- * @route POST /api/auth/login
- * @desc Authenticate user and return a JWT token
- * @access Public
+ * Internal logic: deletes multiple photos by ID array
+ * Used by: photoApiController
  */
-async function login(req, res) {
-    const { email, password } = req.body;
+async function deleteMultiplePhotos(photoIds = []) {
+    let deleted = 0;
+    let errors = 0;
 
-    try {
-        const user = await User.findOne({ email });
-        if (!user || !(await user.comparePassword(password))) {
-            logger.warn(`Login attempt failed for email: ${email}`);
-            return res.status(401).json({ message: 'Invalid credentials' });
+    for (const photoId of photoIds) {
+        try {
+            await deleteSinglePhoto(photoId);
+            deleted++;
+        } catch (err) {
+            logger.warn(`Failed to delete photo ${photoId}: ${err.message}`);
+            errors++;
         }
-
-        const jti = uuidv4();
-        const token = generateToken(user, jti);
-
-        await cache.setInCache(`token:${user._id}`, token, 3600);
-        await cache.setInCache(`jti:${user._id}`, jti, 3600);
-
-        logger.info(`User logged in successfully: ${email}`);
-        res.json({ token });
-    } catch (error) {
-        logger.error(`Login failed for email ${email}: ${error.message}`);
-        res.status(500).json({ message: 'Login failed' });
-    }
-}
-
-/**
- * @route POST /api/auth/logout
- * @desc Logout and invalidate JWT
- * @access Private
- */
-async function logout(req, res) {
-    const jti = req.user.jti;
-    if (!jti) {
-        logger.warn(`Logout attempt with missing JTI by user ${req.user.id}`);
-        return res.status(400).json({ message: "Missing token ID" });
     }
 
-    await cache.blacklistToken(jti);
-    await cache.deleteFromCache(`token:${req.user.id}`);
-    await cache.deleteFromCache(`jti:${req.user.id}`);
-
-    logger.info(`User ${req.user.id} logged out successfully`);
-    res.json({ message: 'Logout successful' });
+    logger.info(`Bulk deletion summary: ${deleted} succeeded, ${errors} failed`);
+    return { deleted, errors };
 }
 
 module.exports = {
-    register,
-    login,
-    logout
+    deleteSinglePhoto,
+    deleteMultiplePhotos
 };
