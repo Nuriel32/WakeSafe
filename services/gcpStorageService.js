@@ -1,4 +1,4 @@
-require('dotenv').config(); // ✅ קודם כל טען את המשתנים מהסביבה
+require('dotenv').config();
 
 const { Storage } = require('@google-cloud/storage');
 const crypto = require('crypto');
@@ -7,7 +7,7 @@ const path = require('path');
 const bucketName = process.env.GCS_BUCKET;
 
 if (!bucketName) {
-  throw new Error('❌ GCS_BUCKET environment variable is missing.');
+  throw new Error(' GCS_BUCKET environment variable is missing.');
 }
 
 const storage = new Storage({
