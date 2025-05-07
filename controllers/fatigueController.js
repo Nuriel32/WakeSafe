@@ -13,10 +13,10 @@ exports.detectFatigue = async (req, res) => {
       ear: req.body.ear,
       headPose: req.body.headPose
     });
-    logger.info(`Fatigue detection completed for user ${req.user.id} (fatigued: ${result.fatigued})`);
+    logger.info(`From fatigueController: Fatigue detection completed for user ${req.user.id} (fatigued: ${result.fatigued})`);
     res.json(result);
   } catch (err) {
-    logger.error(`Fatigue processing failed for user ${req.user.id}: ${err.message}`);
+    logger.error(`From fatigueController: Fatigue processing failed for user ${req.user.id}: ${err.message}`);
     res.status(500).json({ message: 'Failed to process fatigue log' });
   }
 };
@@ -31,10 +31,10 @@ exports.deleteRecentImages = async (req, res) => {
       await FatigueLog.findByIdAndDelete(log._id);
     }
 
-    logger.info(`Deleted ${logs.length} recent fatigue images for user ${req.user.id}`);
+    logger.info(`From fatigueController: Deleted ${logs.length} recent fatigue images for user ${req.user.id}`);
     res.json({ deletedCount: logs.length });
   } catch (err) {
-    logger.error(`Failed to delete recent fatigue images for user ${req.user.id}: ${err.message}`);
+    logger.error(`From fatigueController:  Failed to delete recent fatigue images for user ${req.user.id}: ${err.message}`);
     res.status(500).json({ message: 'Failed to delete images' });
   }
 };

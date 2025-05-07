@@ -1,4 +1,4 @@
-const Photo = require('../models/Photo');
+const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const { deleteFile } = require('../services/gcpStorageService');
 const logger = require('../utils/logger');
@@ -10,31 +10,31 @@ const logger = require('../utils/logger');
 async function deleteSinglePhoto(photoId) {
     const photo = await Photo.findById(photoId);
     if (!photo) {
-        logger.warn(`Photo not found for ID: ${photoId}`);
+        logger.warn(`From PhotoController : Photo not found for ID: ${photoId}`);
         throw new Error('Photo not found');
     }
 
     const session = await DriverSession.findById(photo.sessionId);
     if (!session) {
-        logger.warn(`Session not found for photo ID: ${photoId}`);
+        logger.warn(`From PhotoController: Session not found for photo ID: ${photoId}`);
         throw new Error('Associated session not found');
     }
 
     try {
         await deleteFile(photo.gcsPath);
-        logger.info(`Deleted photo file from GCS: ${photo.gcsPath}`);
+        logger.info(`From PhotoController:  Deleted photo file from GCS: ${photo.gcsPath}`);
     } catch (err) {
-        logger.error(`Failed to delete GCS file: ${photo.gcsPath}`, err);
+        logger.error(`From PhotoController: Failed to delete GCS file: ${photo.gcsPath}`, err);
     }
 
     // Remove reference in session
     session.photos.pull(photo._id);
     session.totalImagesUploaded = Math.max(0, session.totalImagesUploaded - 1);
     await session.save();
-    logger.info(`Removed photo ${photoId} from session ${session._id}`);
+    logger.info(`From PhotoController:  Removed photo ${photoId} from session ${session._id}`);
 
     await Photo.deleteOne({ _id: photo._id });
-    logger.info(`Deleted photo document ${photoId} from MongoDB`);
+    logger.info(`From PhotoController: Deleted photo document ${photoId} from MongoDB`);
 
     return true;
 }
@@ -52,12 +52,12 @@ async function deleteMultiplePhotos(photoIds = []) {
             await deleteSinglePhoto(photoId);
             deleted++;
         } catch (err) {
-            logger.warn(`Failed to delete photo ${photoId}: ${err.message}`);
+            logger.warn(`From PhotoController: Failed to delete photo ${photoId}: ${err.message}`);
             errors++;
         }
     }
 
-    logger.info(`Bulk deletion summary: ${deleted} succeeded, ${errors} failed`);
+    logger.info(`From PhotoController: Bulk deletion summary: ${deleted} succeeded, ${errors} failed`);
     return { deleted, errors };
 }
 

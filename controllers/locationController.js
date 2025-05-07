@@ -11,13 +11,13 @@ exports.getNavigationRecommendations = async (req, res) => {
     const { latitude, longitude, sessionId } = req.body;
 
     if (!latitude || !longitude || !sessionId) {
-        logger.warn(`Missing lat/lng/sessionId from user ${req.user.id}`);
+        logger.warn(`From locationController: Missing lat/lng/sessionId from user ${req.user.id}`);
         return res.status(400).json({ message: 'Missing latitude, longitude or sessionId' });
     }
 
     const session = await DriverSession.findOne({ _id: sessionId, userId: req.user.id });
     if (!session) {
-        logger.warn(`Unauthorized session access attempt by user ${req.user.id}`);
+        logger.warn(`From locationController: Unauthorized session access attempt by user ${req.user.id}`);
         return res.status(403).json({ message: 'Unauthorized session access' });
     }
 
@@ -25,10 +25,10 @@ exports.getNavigationRecommendations = async (req, res) => {
 
     try {
         const destinations = await googleMapService.findNavigationLinks(latitude, longitude, keywords);
-        logger.info(`Navigation recommendations sent for user ${req.user.id} at [${latitude}, ${longitude}]`);
+        logger.info(`From locationController:Navigation recommendations sent for user ${req.user.id} at [${latitude}, ${longitude}]`);
         res.json({ destinations });
     } catch (err) {
-        logger.error(`Failed to generate navigation links for user ${req.user.id}: ${err.message}`);
+        logger.error(`From locationController:  Failed to generate navigation links for user ${req.user.id}: ${err.message}`);
         res.status(500).json({ message: 'Failed to generate navigation links' });
     }
 };

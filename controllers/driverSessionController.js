@@ -11,11 +11,11 @@ exports.createSession = async (req, res) => {
 
     await cache.setActiveSession(session._id.toString(), userId);
 
-    logger.info(`Cached session in Redis: session:${session._id} -> userId ${userId}`);
+    logger.info(`From driverSessionController: Cached session in Redis: session:${session._id} -> userId ${userId}`);
 
     res.status(201).json({ sessionId: session._id });
   } catch (error) {
-    logger.error('Failed to create driver session:', error);
+    logger.error('From driverSessionController: Failed to create driver session:', error);
     res.status(500).json({ message: 'Could not create session' });
   }
 };
