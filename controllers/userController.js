@@ -5,11 +5,11 @@ async function getCurrentUser(req, res) {
   try {
     const user = await User.findById(req.user.id).select('-password');
     if (!user) {
-      logger.warn(`User not found for ID: ${req.user.id}`);
+      logger.warn(`From UserController :User not found for ID: ${req.user.id}`);
       return res.status(404).json({ message: 'User not found' });
     }
 
-    logger.info(`User profile fetched for ID: ${req.user.id}`);
+    logger.info(`From UserController : User profile fetched for ID: ${req.user.id}`);
     res.json(user);
   } catch (err) {
     logger.error(`Error fetching user ${req.user.id}: ${err.message}`);
@@ -24,11 +24,11 @@ async function updateUser(req, res) {
 
     const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select('-password');
     if (!user) {
-      logger.warn(`Update failed, user not found: ${req.user.id}`);
+      logger.warn(`From UserController : Update failed, user not found: ${req.user.id}`);
       return res.status(404).json({ message: 'User not found' });
     }
 
-    logger.info(`User ${req.user.id} updated profile`);
+    logger.info(`From UserController :User ${req.user.id} updated profile`);
     res.json(user);
   } catch (err) {
     logger.error(`Failed to update user ${req.user.id}: ${err.message}`);
@@ -40,14 +40,14 @@ async function deleteUser(req, res) {
   try {
     const user = await User.findByIdAndDelete(req.user.id);
     if (!user) {
-      logger.warn(`Delete failed, user not found: ${req.user.id}`);
+      logger.warn(`From UserController : Delete failed, user not found: ${req.user.id}`);
       return res.status(404).json({ message: 'User not found' });
     }
 
-    logger.info(`User ${req.user.id} deleted account`);
+    logger.info(`From UserController :User ${req.user.id} deleted account`);
     res.json({ message: 'User deleted successfully' });
   } catch (err) {
-    logger.error(`Failed to delete user ${req.user.id}: ${err.message}`);
+    logger.error(`From UserController :Failed to delete user ${req.user.id}: ${err.message}`);
     res.status(400).json({ message: 'Invalid delete' });
   }
 }

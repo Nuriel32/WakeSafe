@@ -72,7 +72,7 @@ async function login(req, res) {
   try {
     const user = await User.findOne({ email });
     if (!user || !(await user.comparePassword(password))) {
-      logger.warn(`Login attempt failed for email: ${email}`);
+      logger.warn(`From authController: Login attempt failed for email: ${email}`);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
@@ -82,10 +82,10 @@ async function login(req, res) {
     await cache.setInCache(`token:${user._id}`, token, 3600);
     await cache.setInCache(`jti:${user._id}`, jti, 3600);
 
-    logger.info(`User logged in successfully: ${email}`);
+    logger.info(`From authController: User logged in successfully: ${email}`);
     res.json({ token });
   } catch (error) {
-    logger.error(`Login failed for email ${email}: ${error.message}`);
+    logger.error(`From authController:  Login failed for email ${email}: ${error.message}`);
     res.status(500).json({ message: 'Login failed' });
   }
 }
@@ -106,7 +106,7 @@ async function logout(req, res) {
   await cache.deleteFromCache(`token:${req.user.id}`);
   await cache.deleteFromCache(`jti:${req.user.id}`);
 
-  logger.info(`User ${req.user.id} logged out successfully`);
+  logger.info(`From authController: User ${req.user.id} logged out successfully`);
   res.json({ message: 'Logout successful' });
 }
 

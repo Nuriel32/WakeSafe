@@ -12,11 +12,11 @@ exports.createTrip = async (req, res) => {
   try {
     const trip = new Trip({ userId: req.user.id });
     await trip.save();
-    logger.info(`Trip created for user ${req.user.id}, Trip ID: ${trip._id}`);
+    logger.info(`From TripController: Trip created for user ${req.user.id}, Trip ID: ${trip._id}`);
     res.status(201).json({ tripId: trip._id });
   } catch (err) {
-    logger.error(`Failed to create trip for user ${req.user.id}: ${err.message}`);
-    res.status(500).json({ error: 'Failed to create trip' });
+    logger.error(`From TripController: Failed to create trip for user ${req.user.id}: ${err.message}`);
+    res.status(500).json({ error: 'From TripController: Failed to create trip' });
   }
 };
 
@@ -29,8 +29,8 @@ exports.createTrip = async (req, res) => {
 exports.detectFatigue = async (req, res) => {
   const { image, ear, headPose, tripId } = req.body;
   if (!image || !ear || !headPose || !tripId) {
-    logger.warn(`Fatigue detection missing data for user ${req.user.id}`);
-    return res.status(400).json({ error: "Missing required data" });
+    logger.warn(`From TripController: Fatigue detection missing data for user ${req.user.id}`);
+    return res.status(400).json({ error: "From TripController:  Missing required data" });
   }
 
   try {
@@ -55,12 +55,12 @@ exports.detectFatigue = async (req, res) => {
     });
 
     const isFatigued = ear < 0.2 || Math.abs(headPose.pitch) > 15;
-    logger.info(`Fatigue detection processed for user ${req.user.id} (fatigued: ${isFatigued})`);
+    logger.info(`From TripController:  Fatigue detection processed for user ${req.user.id} (fatigued: ${isFatigued})`);
 
     res.json({ fatigued: isFatigued, url });
   } catch (err) {
-    logger.error(`Fatigue detection failed for user ${req.user.id}: ${err.message}`);
-    res.status(500).json({ error: 'Fatigue detection failed' });
+    logger.error(`From TripController: Fatigue detection failed for user ${req.user.id}: ${err.message}`);
+    res.status(500).json({ error: 'From TripController: Fatigue detection failed' });
   }
 };
 
@@ -84,10 +84,10 @@ exports.deleteImagesFromLastMinute = async (req, res) => {
       await ImageLog.findByIdAndDelete(image._id);
     }
 
-    logger.info(`Deleted ${images.length} image(s) from last minute for user ${req.user.id}`);
+    logger.info(`From TripController:  Deleted ${images.length} image(s) from last minute for user ${req.user.id}`);
     res.json({ deletedCount: images.length });
   } catch (err) {
-    logger.error(`Failed to delete recent images for user ${req.user.id}: ${err.message}`);
-    res.status(500).json({ error: 'Failed to delete recent images' });
+    logger.error(`From TripController:  Failed to delete recent images for user ${req.user.id}: ${err.message}`);
+    res.status(500).json({ error: 'From TripController: Failed to delete recent images' });
   }
 };
