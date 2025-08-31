@@ -1,6 +1,6 @@
 const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
-const { deleteFile } = require('../services/gcpStorageService');
+const { deleteFile, getUnprocessedPhotos: getGCSUnprocessedPhotos, updatePhotoProcessingStatus } = require('../services/gcpStorageService');
 const logger = require('../utils/logger');
 
 /**
@@ -60,6 +60,132 @@ async function deleteMultiplePhotos(photoIds = []) {
     logger.info(`From PhotoController: Bulk deletion summary: ${deleted} succeeded, ${errors} failed`);
     return { deleted, errors };
 }
+
+/**
+ * Get all unprocessed photos for AI analysis
+ * @route GET /api/photos/unprocessed
+ */
+exports.getUnprocessedPhotos = async (req, res) => {
+    try {
+        const { limit = 50, status = 'pending' } = req.query;
+        
+        // Get photos from MongoDB
+        const photos = await Photo.find({ 
+            aiProcessingStatus: status 
+        })
+        .sort({ uploadedAt: 1 })
+        .limit(parseInt(limit))
+        .populate('sessionId', 'startTime endTime isActive')
+        .populate('userId', 'firstName lastName email');
+
+        // Get corresponding GCS files
+        const gcsPhotos = await getGCSUnprocessedPhotos(status);
+        const gcsMap = new Map(gcsPhotos.map(p => [p.gcsPath, p]));
+
+        // Combine MongoDB and GCS data
+        const enrichedPhotos = photos.map(photo => {
+            const gcsData = gcsMap.get(photo.gcsPath);
+            return {
+                ...photo.toObject(),
+                gcsUrl: `https://storage.googleapis.com/${process.env.GCS_BUCKET}/${photo.gcsPath}`,
+                gcsMetadata: gcsData?.metadata || {}
+            };
+        });
+
+        logger.info(`From photoController: Retrieved ${enrichedPhotos.length} unprocessed photos for AI analysis`);
+        
+        res.json({
+            photos: enrichedPhotos,
+            count: enrichedPhotos.length,
+            status
+        });
+    } catch (error) {
+        logger.error(`From photoController: Failed to get unprocessed photos: ${error.message}`);
+        res.status(500).json({ error: 'Failed to retrieve unprocessed photos' });
+    }
+};
+
+/**
+ * Update AI analysis results for a photo
+ * @route PUT /api/photos/:id/ai-results
+ */
+exports.updatePhotoAIResults = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { 
+            prediction, 
+            confidence, 
+            ear, 
+            headPose, 
+            processingTime,
+            aiResults 
+        } = req.body;
+
+        const photo = await Photo.findById(id);
+        if (!photo) {
+            return res.status(404).json({ error: 'Photo not found' });
+        }
+
+        // Update photo with AI results
+        const results = {
+            prediction: prediction || 'unknown',
+            confidence,
+            ear,
+            headPose,
+            processingTime,
+            ...aiResults
+        };
+
+        await photo.updateAIResults(results);
+
+        // Update GCS metadata
+        await updatePhotoProcessingStatus(photo.gcsPath, 'completed', results);
+
+        logger.info(`From photoController: Updated AI results for photo ${id}, prediction: ${prediction}`);
+
+        res.json({
+            message: 'AI results updated successfully',
+            photoId: id,
+            prediction,
+            confidence
+        });
+    } catch (error) {
+        logger.error(`From photoController: Failed to update AI results for photo ${req.params.id}: ${error.message}`);
+        res.status(500).json({ error: 'Failed to update AI results' });
+    }
+};
+
+/**
+ * Get all photos for a specific session
+ * @route GET /api/photos/session/:sessionId
+ */
+exports.getSessionPhotos = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const { limit = 100, prediction } = req.query;
+
+        const query = { sessionId };
+        if (prediction) {
+            query.prediction = prediction;
+        }
+
+        const photos = await Photo.find(query)
+            .sort({ uploadedAt: -1 })
+            .limit(parseInt(limit))
+            .populate('userId', 'firstName lastName');
+
+        logger.info(`From photoController: Retrieved ${photos.length} photos for session ${sessionId}`);
+
+        res.json({
+            photos,
+            count: photos.length,
+            sessionId
+        });
+    } catch (error) {
+        logger.error(`From photoController: Failed to get session photos: ${error.message}`);
+        res.status(500).json({ error: 'Failed to retrieve session photos' });
+    }
+};
 
 module.exports = {
     deleteSinglePhoto,
