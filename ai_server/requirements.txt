@@ -39,6 +39,7 @@ PyJWT==2.8.0
 
 # HTTP Client
 httpx==0.25.2
+requests==2.31.0
 
 # Data Processing
 pandas==2.1.4
