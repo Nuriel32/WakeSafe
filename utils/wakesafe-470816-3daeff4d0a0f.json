@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "wakesafe-470816",
+  "private_key_id": "3daeff4d0a0f6863490ef3115d996783da748d3c",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDA6Z5gBoEkeNip\nvG43a0Acn7S8/weKLaNwFwN3zZ1Iwmo1+Go1Z1dfYzdT9hytcx38SPHy3ySrv8Dj\ndVemGddrUZ8oxhF7Nel7oeK/lcFNKToJQQG0sby+JIHnlbEzQvh21Qgz8JZ/oy6d\nMKnGGd7Ac0bHf7GLEevOqa8zCVaO2aiZ36kVmHQvV1BpRKAf15/QBExtU+xRQ7Re\n4Tpu02FaxhAH0fDba9xH8952jE0lCHslwGppmu+kgdG7OiCvVP5W8mXrh5vnld25\nqVnvqHcx6zjsb2ujvsQ16hd52/05hoVOuKKLq8nnqXtoW8vzRPMRTE8hYY3IOb9e\nyrxzEJEnAgMBAAECggEAQJ+CAGTtagxZeDK5MTNqXKxbXVyJaA51y5zJ+p4UbEVE\nUyQOYCloKXoRFL1DSg9gIh1Ff7ikjixEL24lmGzbrwW+rWf8fyvGNTY7wTYndPO0\nj1kJe0B3G7MbGTsaCzQKC7S9dLjJkaRWfy3IEaak6g8zzKzICvBL8AUDvbMJHfzS\nRhygHVuilr/T05xn89Qoq3CJzbRo28oge8/qO6rGWddl0PjNAwgeu4vDKCxWa50+\n43rO2pM+LyZOoEJyT34NqMfc8E7pumWE+7NHHJ/ZWPtO0Xy85AyqIQ8KKl1IPOR3\nq7ndC1TW+/s2OmSnsKqq81I1GDbRWWuluCa/M75j0QKBgQD2E/uwNcueFuccOlP2\n7yl+syZiDryUA2yP6k36EZq9MYQohU6lRAJC5YH1iSQPQA65Ha/BwUChs52DP9aW\n9jozwC6hWcwT5QsB3rHOu+niUWQaMc4h4syayrHgii/AYHSEhjEgNFsBcvNY5DNE\nl7oTl8J4r4WAT2Aoyh3s1KZ1BQKBgQDIsNyNpGc5poIJvqrvSrSnTy44YIY+ZD2p\nFdyqvQOhnKe05drwCIIuyTGUvM+kcIkKEClCVILIHiE5lE6WsMZOuADfmMz5r9pq\nZ8dyBBxbiwwCGrJI+ZNhlIgZiObEgcsHeW2i+iu+rLQ+S/dvn8zgkiz9bvIGzKHo\nEYJxgsiFOwKBgQCgh168kAt54RT5PC/EOjbGmZYjh9uLb0RmCgK+bLeWTnQZfwVU\nGK6k91W1WLa2YCJ6rpwWeLxyAFtz4LRbnNtRIUEKLytLmzJ4EM/LvpiP9GqqD+2Z\n+3tgS3SIt3z5MbMxNN1dVeo8YsHPLmcnixdvaqQJ2O7tSlq/oUKuWfcRBQKBgQCi\n593AJCmehGieHGWIpG2MOhvcq42M67WZoSNkfNWLxCvmDYbwvRdffvV+NN2gL7Et\nt/yl2Q/n/X0eziIU9B2lHHupBNGuBG8ZXHBrPqb+MBppQt5hmiVmWjk38QbRkEIM\nKScz2jrUJkCRKP0LYP3fdQiMGBjiKA1s4XmvRmgarQKBgDu7I9O2F8D5RJ4ADb9l\n20kEpzPBpsBC1jX69moZGIEeFuT7X/9OBiEtlIkdSf7DmSOMzxbKFmlfSXOfibmf\nQBriiQG4Obo1G2dnLTqwcLTf52g9JJ015vnh0FB9rHSw+8RUemF2IXCps3dyZGTA\n6zDtZnSCRQ4d1M1inrc8nTaC\n-----END PRIVATE KEY-----\n",
+  "client_email": "wakesafegcp@wakesafe-470816.iam.gserviceaccount.com",
+  "client_id": "112839506686045601663",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/wakesafegcp%40wakesafe-470816.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

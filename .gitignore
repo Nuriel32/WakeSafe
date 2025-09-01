@@ -44,3 +44,4 @@ dump.rdb
 
 cred/*.json
 cred/petfinderapp-424309-45345eb0c0ea.json
+utils/logger.js
