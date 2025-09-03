@@ -14,7 +14,7 @@ exports.findNavigationLinks = async (latitude, longitude, keywords) => {
 
     for (const keyword of keywords) {
         const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&radius=5000&keyword=${encodeURIComponent(keyword)}&key=${GOOGLE_API_KEY}`;
-
+        console.log('Fetching from Google Maps:', url);
         const response = await axios.get(url);
         const results = response.data.results;
 
