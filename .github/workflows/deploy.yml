@@ -16,8 +16,8 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.PROJECT_ID }}
+          service_account_key: ${{ secrets._SA_KEY }}
           export_default_credentials: true
 
       - name: Configure Docker for GCP
@@ -25,8 +25,8 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }} .
-          docker tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }} gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:latest
+          docker build -t gcr.io/${{ secrets.PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }} .
+          docker tag gcr.io/${{ secrets.PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }} gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:latest
 
       - name: Push Docker image to GCR
         run: |
