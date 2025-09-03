@@ -6,6 +6,7 @@ exports.getFromCache = async (key) => {
 };
 
 exports.setInCache = async (key, value, ttlSeconds = 1800) => {
+    console.log('Setting in cache:', key, value, ttlSeconds);
     await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
 };
 
