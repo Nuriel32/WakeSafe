@@ -17,7 +17,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.PROJECT_ID }}
-          service_account_key: ${{ secrets._SA_KEY }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
           export_default_credentials: true
 
       - name: Configure Docker for GCP
@@ -30,13 +30,13 @@ jobs:
 
       - name: Push Docker image to GCR
         run: |
-          docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }}
-          docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:latest
+          docker push gcr.io/${{ secrets.PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }}
+          docker push gcr.io/${{ secrets.PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:latest
 
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ secrets.CLOUD_RUN_SERVICE }} \
-            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }} \
+            --image gcr.io/${{ secrets.PROJECT_ID }}/${{ secrets.CLOUD_RUN_SERVICE }}:${{ github.run_number }} \
             --region ${{ secrets.GCP_REGION }} \
             --platform managed \
             --allow-unauthenticated \
