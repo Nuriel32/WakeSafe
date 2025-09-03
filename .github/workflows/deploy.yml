@@ -24,8 +24,7 @@ jobs:
           project_id: ${{ secrets.PROJECT_ID }}
 
       - name: Configure Docker for GCP
-         run: gcloud auth configure-docker gcr.io --quiet
-
+        run: gcloud auth configure-docker gcr.io --quiet
 
       - name: Build Docker image
         run: |
