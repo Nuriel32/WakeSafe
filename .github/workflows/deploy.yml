@@ -13,6 +13,8 @@ jobs:
       SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE }}
       REGION: ${{ secrets.GCP_REGION }}
       RUN_NUMBER: ${{ github.run_number }}
+      # optional: use a different secret for the deployed service name
+      SERVICE_DEPLOY: ${{ secrets.CLOUD_RUN_SERVICE }}
 
     steps:
       - name: Checkout code
@@ -34,17 +36,19 @@ jobs:
       - name: Validate & normalize names
         run: |
           set -euo pipefail
-          [ -n "${PROJECT_ID}" ]   || { echo "PROJECT_ID is empty"; exit 1; }
-          [ -n "${SERVICE_NAME}" ] || { echo "CLOUD_RUN_SERVICE is empty"; exit 1; }
-          [ -n "${REGION}" ]       || { echo "GCP_REGION is empty"; exit 1; }
+          : "${PROJECT_ID:?PROJECT_ID is empty}"
+          : "${SERVICE_NAME:?CLOUD_RUN_SERVICE is empty}"
+          : "${REGION:?GCP_REGION is empty}"
+          SERVICE_DEPLOY="${SERVICE_DEPLOY:-$SERVICE_NAME}"
 
-          if ! echo "${SERVICE_NAME}" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
-            echo "CLOUD_RUN_SERVICE invalid: '${SERVICE_NAME}'"
+          # Validate Cloud Run service name
+          if ! echo "${SERVICE_DEPLOY}" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
+            echo "CLOUD_RUN_SERVICE invalid: '${SERVICE_DEPLOY}'"
             exit 1
           fi
 
+          # Build image repo name from SERVICE_NAME (sanitize for Docker)
           IMAGE_REPO="$(echo "${SERVICE_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[ _]+/-/g; s|/+|-|g')"
-
           if ! echo "${IMAGE_REPO}" | grep -Eq '^[a-z0-9]+([-.][a-z0-9]+)*$'; then
             echo "Invalid Docker image repo after normalization: '${IMAGE_REPO}'"
             exit 1
@@ -53,6 +57,7 @@ jobs:
           echo "IMAGE_REPO=${IMAGE_REPO}" >> "$GITHUB_ENV"
           echo "IMAGE_URI=gcr.io/${PROJECT_ID}/${IMAGE_REPO}:${RUN_NUMBER}" >> "$GITHUB_ENV"
           echo "IMAGE_URI_LATEST=gcr.io/${PROJECT_ID}/${IMAGE_REPO}:latest" >> "$GITHUB_ENV"
+          echo "SERVICE_DEPLOY=${SERVICE_DEPLOY}" >> "$GITHUB_ENV"
 
       - name: Sanity check gcloud
         run: |
@@ -76,7 +81,7 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy "${SERVICE_NAME}" \
+          gcloud run deploy "${SERVICE_DEPLOY}" \
             --image "${IMAGE_URI}" \
             --region "${REGION}" \
             --platform managed \
