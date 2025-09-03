@@ -21,6 +21,7 @@ exports.blacklistToken = async (jti, ttlSeconds = 3600) => {
 
 exports.isTokenBlacklisted = async (jti) => {
     return !!(await redis.get(`blacklist:${jti}`));
+    console.log('Checking blacklist:', jti, !!(await redis.get(`blacklist:${jti}`)));
 };
 
 
