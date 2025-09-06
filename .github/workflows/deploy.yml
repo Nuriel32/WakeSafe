@@ -92,10 +92,11 @@ jobs:
           docker build -t "${IMAGE_URI}" .
           docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
 
-      - name: Push Docker image to GCR
-        run: |
-          docker push "${IMAGE_URI}"
-          docker push "${IMAGE_URI_LATEST}"
+           - name: Force service port to 8080 (pre-update)
+             run: |
+          gcloud run services update "${SERVICE_DEPLOY}" \
+            --region "${REGION}" \
+            --port 8080 || true
 
       - name: Deploy to Cloud Run
         run: |
@@ -104,8 +105,15 @@ jobs:
             --region "${REGION}" \
             --platform managed \
             --allow-unauthenticated \
-            --port 8000 \
+            --port 8080 \
+            --set-env-vars "PORT=8080,NODE_ENV=production" \
             --memory 512Mi \
             --cpu 1 \
             --max-instances 10 \
+            --timeout 300 \
             --quiet
+
+      - name: Verify effective port
+        run: |
+          gcloud run services describe "${SERVICE_DEPLOY}" --region "${REGION}" \
+            --format='value(spec.template.spec.containers[0].ports[0].containerPort)'
