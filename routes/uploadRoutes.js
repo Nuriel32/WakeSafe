@@ -7,7 +7,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const auth = require('../middlewares/auth');
 const checkTokenRevoked = require('../middlewares/checkTokenRevoked');
 const validateSessionViaCache = require('../middlewares/validateSessionViaCache');
-const { uploadPhoto } = require('../controllers/uploadController');
+const { uploadPhoto, getPresignedUrl } = require('../controllers/uploadController');
 
 /**
  * @route POST /api/upload
@@ -21,6 +21,19 @@ router.post(
     upload.single('photo'),
     validateSessionViaCache,
     uploadPhoto
+);
+
+/**
+ * @route POST /api/upload/presigned
+ * @desc Get presigned URL for direct cloud upload
+ * @access Private
+ */
+router.post(
+    '/presigned',
+    auth,
+    checkTokenRevoked,
+    validateSessionViaCache,
+    getPresignedUrl
 );
 
 module.exports = router;

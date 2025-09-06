@@ -1,7 +1,8 @@
-const { uploadFile } = require('../services/gcpStorageService.js');
+const { uploadFile, generateSignedUrl } = require('../services/gcpStorageService.js');
 const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const logger = require('../utils/logger');
+const crypto = require('crypto');
 
 /**
  * Handles photo upload from the client with enhanced metadata for AI processing
@@ -74,6 +75,74 @@ async function uploadPhoto(req, res) {
     }
 }
 
+/**
+ * Get presigned URL for direct cloud upload
+ * - Generates a presigned URL for direct upload to GCP
+ * - Creates a Photo document in MongoDB with pending status
+ * - Returns the presigned URL and photo metadata
+ */
+async function getPresignedUrl(req, res) {
+    try {
+        const { fileName, sessionId, metadata } = req.body;
+        const userId = req.user.id;
+        const session = req.session;
+
+        if (!fileName || !sessionId) {
+            logger.warn(`From UploadController: Presigned URL request missing fileName or sessionId. User: ${userId}`);
+            return res.status(400).json({ error: 'Missing fileName or sessionId' });
+        }
+
+        // Validate file extension
+        const extension = fileName.split('.').pop().toLowerCase();
+        const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+        if (!allowedExtensions.includes(extension)) {
+            return res.status(400).json({ error: `Unsupported file format: ${extension}` });
+        }
+
+        // Generate unique filename
+        const timestamp = Date.now();
+        const random = crypto.randomBytes(4).toString('hex');
+        const smartName = `${timestamp}_${random}.${extension}`;
+        const gcsPath = `drivers/${userId}/sessions/${sessionId}/photos/${smartName}`;
+
+        // Generate presigned URL
+        const presignedUrl = await generateSignedUrl(gcsPath);
+
+        // Create photo document with pending status
+        const photo = await Photo.create({
+            sessionId,
+            userId,
+            gcsPath,
+            name: smartName,
+            location: metadata?.location || null,
+            clientMeta: metadata?.clientMeta || null,
+            prediction: 'pending',
+            aiProcessingStatus: 'pending',
+            uploadStatus: 'pending' // New field to track upload status
+        });
+
+        // Update session statistics
+        session.totalImagesUploaded += 1;
+        session.photos.push(photo._id);
+        await session.save();
+
+        logger.info(`From UploadController: Presigned URL generated for user ${userId}, session ${sessionId}. Photo ID: ${photo._id}, GCS Path: ${gcsPath}`);
+
+        res.json({
+            presignedUrl,
+            photoId: photo._id,
+            gcsPath,
+            fileName: smartName,
+            expiresIn: 3600 // 1 hour
+        });
+
+    } catch (err) {
+        logger.error(`From UploadController: Presigned URL generation failed for user ${req.user?.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to generate presigned URL' });
+    }
+}
+
 module.exports = {
-    uploadPhoto
+    uploadPhoto,
+    getPresignedUrl
 };

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WakeSafe - Driver Safety App</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/auth.css">
+    <link rel="stylesheet" href="styles/dashboard.css">
+    <link rel="stylesheet" href="styles/upload.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+        <div class="loading-spinner">
+            <i class="fas fa-car"></i>
+            <p>Loading WakeSafe...</p>
+        </div>
+    </div>
+
+    <!-- Authentication Container -->
+    <div id="authContainer" class="auth-container hidden">
+        <div class="auth-wrapper">
+            <!-- Login Form -->
+            <div id="loginForm" class="auth-form">
+                <div class="auth-header">
+                    <i class="fas fa-car"></i>
+                    <h1>WakeSafe</h1>
+                    <p>Driver Safety & Fatigue Detection</p>
+                </div>
+                
+                <form id="loginFormElement">
+                    <div class="form-group">
+                        <label for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-sign-in-alt"></i>
+                        Login
+                    </button>
+                </form>
+                
+                <div class="auth-footer">
+                    <p>Don't have an account? <a href="#" id="showRegister">Register</a></p>
+                </div>
+            </div>
+
+            <!-- Registration Form -->
+            <div id="registerForm" class="auth-form hidden">
+                <div class="auth-header">
+                    <i class="fas fa-user-plus"></i>
+                    <h1>Create Account</h1>
+                    <p>Join WakeSafe for safer driving</p>
+                </div>
+                
+                <form id="registerFormElement">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="firstName">First Name</label>
+                            <input type="text" id="firstName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="lastName">Last Name</label>
+                            <input type="text" id="lastName" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="registerEmail">Email</label>
+                        <input type="email" id="registerEmail" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="registerPassword">Password</label>
+                        <input type="password" id="registerPassword" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="phone">Phone Number</label>
+                        <input type="tel" id="phone" placeholder="05XXXXXXXX" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="carNumber">Car Number</label>
+                        <input type="text" id="carNumber" placeholder="1234567" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-user-plus"></i>
+                        Register
+                    </button>
+                </form>
+                
+                <div class="auth-footer">
+                    <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Container -->
+    <div id="appContainer" class="app-container hidden">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-car"></i>
+                    <span>WakeSafe</span>
+                </div>
+                
+                <div class="user-info">
+                    <div class="connection-status">
+                        <i id="connectionIcon" class="fas fa-wifi"></i>
+                        <span id="connectionStatus">Connected</span>
+                    </div>
+                    <div class="user-menu">
+                        <button id="userMenuBtn" class="btn btn-secondary">
+                            <i class="fas fa-user"></i>
+                            <span id="userName">User</span>
+                        </button>
+                        <div id="userDropdown" class="dropdown hidden">
+                            <a href="#" id="logoutBtn">
+                                <i class="fas fa-sign-out-alt"></i>
+                                Logout
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard -->
+            <div id="dashboard" class="dashboard">
+                <div class="dashboard-header">
+                    <h2>Driver Dashboard</h2>
+                    <div class="session-controls">
+                        <button id="startSessionBtn" class="btn btn-success">
+                            <i class="fas fa-play"></i>
+                            Start Session
+                        </button>
+                        <button id="endSessionBtn" class="btn btn-danger hidden">
+                            <i class="fas fa-stop"></i>
+                            End Session
+                        </button>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <!-- Session Status -->
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <i class="fas fa-clock"></i>
+                            <h3>Session Status</h3>
+                        </div>
+                        <div class="card-content">
+                            <div id="sessionStatus" class="status-indicator">
+                                <span class="status-dot inactive"></span>
+                                <span>No Active Session</span>
+                            </div>
+                            <div id="sessionDuration" class="session-duration">
+                                <span>00:00:00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fatigue Detection -->
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <i class="fas fa-eye"></i>
+                            <h3>Fatigue Detection</h3>
+                        </div>
+                        <div class="card-content">
+                            <div id="fatigueStatus" class="fatigue-indicator">
+                                <div class="fatigue-level">
+                                    <span class="level-label">Alertness Level</span>
+                                    <div class="level-bar">
+                                        <div id="alertnessBar" class="level-fill"></div>
+                                    </div>
+                                    <span id="alertnessPercent" class="level-percent">100%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Photo Upload -->
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <i class="fas fa-camera"></i>
+                            <h3>Photo Upload</h3>
+                        </div>
+                        <div class="card-content">
+                            <div class="upload-area" id="uploadArea">
+                                <div class="upload-content">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <p>Drop photos here or click to upload</p>
+                                    <input type="file" id="photoInput" multiple accept="image/*" hidden>
+                                </div>
+                            </div>
+                            <div id="uploadProgress" class="upload-progress hidden">
+                                <div class="progress-bar">
+                                    <div id="progressFill" class="progress-fill"></div>
+                                </div>
+                                <span id="progressText">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="dashboard-card">
+                        <div class="card-header">
+                            <i class="fas fa-history"></i>
+                            <h3>Recent Activity</h3>
+                        </div>
+                        <div class="card-content">
+                            <div id="activityLog" class="activity-log">
+                                <div class="activity-item">
+                                    <i class="fas fa-info-circle"></i>
+                                    <span>Welcome to WakeSafe! Start a session to begin monitoring.</span>
+                                    <small>Just now</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Photo Gallery -->
+            <div id="photoGallery" class="photo-gallery hidden">
+                <div class="gallery-header">
+                    <h2>Session Photos</h2>
+                    <button id="backToDashboard" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i>
+                        Back to Dashboard
+                    </button>
+                </div>
+                <div id="photoGrid" class="photo-grid">
+                    <!-- Photos will be dynamically loaded here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notificationContainer" class="notification-container"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/websocket.js"></script>
+    <script src="js/upload.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
