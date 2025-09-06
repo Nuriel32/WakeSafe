@@ -13,7 +13,7 @@ jobs:
       SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE }}
       REGION: ${{ secrets.GCP_REGION }}
       RUN_NUMBER: ${{ github.run_number }}
-      # optional: use a different secret for the deployed service name
+      # optional: override deployed service name per-env
       SERVICE_DEPLOY: ${{ secrets.CLOUD_RUN_SERVICE }}
 
     steps:
@@ -34,33 +34,55 @@ jobs:
           export_environment_variables: true
 
       - name: Validate & normalize names
+        shell: bash
         run: |
           set -euo pipefail
           : "${PROJECT_ID:?PROJECT_ID is empty}"
           : "${SERVICE_NAME:?CLOUD_RUN_SERVICE is empty}"
           : "${REGION:?GCP_REGION is empty}"
-          SERVICE_DEPLOY="${SERVICE_DEPLOY:-$SERVICE_NAME}"
 
-          # Validate Cloud Run service name
-          if ! echo "${SERVICE_DEPLOY}" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
-            echo "CLOUD_RUN_SERVICE invalid: '${SERVICE_DEPLOY}'"
+          SERVICE_DEPLOY_RAW="${SERVICE_DEPLOY:-$SERVICE_NAME}"
+
+          sanitize_service() {
+            # lower, spaces/underscores -> '-', remove invalid, collapse dashes, trim edges
+            local out
+            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[ _]+/-/g; s/[^a-z0-9-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
+            # must start with a letter
+            if ! echo "$out" | grep -qE '^[a-z]'; then
+              out="svc-$out"
+            fi
+            # max 63 chars
+            echo "${out:0:63}"
+          }
+
+          sanitize_image_repo() {
+            # Docker repo: lowercase, spaces/underscores/slashes -> '-', keep a-z0-9.-, trim dashes
+            local out
+            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's|[ _/]+|-|g; s/[^a-z0-9.-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
+            echo "$out"
+          }
+
+          SERVICE_DEPLOY="$(sanitize_service "$SERVICE_DEPLOY_RAW")"
+          IMAGE_REPO="$(sanitize_image_repo "$SERVICE_NAME")"
+
+          # final validations
+          if ! echo "$SERVICE_DEPLOY" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
+            echo "CLOUD_RUN_SERVICE invalid after normalization: '$SERVICE_DEPLOY'"
+            exit 1
+          fi
+          if ! echo "$IMAGE_REPO" | grep -Eq '^[a-z0-9]+([-.][a-z0-9]+)*$'; then
+            echo "Invalid Docker image repo after normalization: '$IMAGE_REPO'"
             exit 1
           fi
 
-          # Build image repo name from SERVICE_NAME (sanitize for Docker)
-          IMAGE_REPO="$(echo "${SERVICE_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[ _]+/-/g; s|/+|-|g')"
-          if ! echo "${IMAGE_REPO}" | grep -Eq '^[a-z0-9]+([-.][a-z0-9]+)*$'; then
-            echo "Invalid Docker image repo after normalization: '${IMAGE_REPO}'"
-            exit 1
-          fi
-
-          echo "IMAGE_REPO=${IMAGE_REPO}" >> "$GITHUB_ENV"
-          echo "IMAGE_URI=gcr.io/${PROJECT_ID}/${IMAGE_REPO}:${RUN_NUMBER}" >> "$GITHUB_ENV"
-          echo "IMAGE_URI_LATEST=gcr.io/${PROJECT_ID}/${IMAGE_REPO}:latest" >> "$GITHUB_ENV"
-          echo "SERVICE_DEPLOY=${SERVICE_DEPLOY}" >> "$GITHUB_ENV"
+          echo "IMAGE_REPO=$IMAGE_REPO" >> "$GITHUB_ENV"
+          echo "IMAGE_URI=gcr.io/$PROJECT_ID/$IMAGE_REPO:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
+          echo "IMAGE_URI_LATEST=gcr.io/$PROJECT_ID/$IMAGE_REPO:latest" >> "$GITHUB_ENV"
+          echo "SERVICE_DEPLOY=$SERVICE_DEPLOY" >> "$GITHUB_ENV"
 
       - name: Sanity check gcloud
         run: |
+          gcloud config set project "$PROJECT_ID"
           gcloud auth list
           gcloud config list
           gcloud auth print-access-token >/dev/null
@@ -70,23 +92,4 @@ jobs:
 
       - name: Build Docker image
         run: |
-          echo "Building ${IMAGE_URI}"
-          docker build -t "${IMAGE_URI}" .
-          docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
-
-      - name: Push Docker image to GCR
-        run: |
-          docker push "${IMAGE_URI}"
-          docker push "${IMAGE_URI_LATEST}"
-
-      - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy "${SERVICE_DEPLOY}" \
-            --image "${IMAGE_URI}" \
-            --region "${REGION}" \
-            --platform managed \
-            --allow-unauthenticated \
-            --port 8000 \
-            --memory 512Mi \
-            --cpu 1 \
-            --max-instances 10
+          echo "Building ${IMAGE_URI_
