@@ -1,26 +1,43 @@
-# שלב 1: בסיס קל ומהיר
+# בסיס קל
 FROM node:18-alpine
 
-# תיקיית עבודה בתוך הקונטיינר
+# התקנות מערכת: redis + tini (לטיפול בסיגנלים ותהליכי ילד)
+RUN apk add --no-cache redis tini
+
+# תיקיית עבודה
 WORKDIR /app
 
-# מצב Production (משפיע על תלותים/לוגים)
+# מצב פרודקשן
 ENV NODE_ENV=production
 
+# התקנת תלויות לפי lockfile (מהיר ודטרמיניסטי)
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# העתקת שאר הקוד
+# קוד האפליקציה
 COPY . .
 
-# ברירת מחדל תואמת Cloud Run (אפשר גם לדלג—Cloud Run מזריק PORT)
+# ברירת מחדל (Cloud Run מזריק PORT בכל מקרה; זה רק דיפולט)
 ENV PORT=8080
 
-# לחשיפה דקלרטיבית בלבד (Cloud Run לא מסתמך על EXPOSE אבל זה סטנדרטי)
+# Redis לוקאלי (ניתן לשנות בפריסה)
+ENV REDIS_HOST=127.0.0.1
+ENV REDIS_PORT=6379
+
+# חשיפה דקלרטיבית
 EXPOSE 8080
 
-# אבטחה: להריץ כמשתמש לא-רוט (ודא שלתיקיות יש הרשאות מתאימות)
+# להריץ כמשתמש לא-רוט
+RUN chown -R node:node /app
 USER node
 
-# נקודת כניסה — ודא שהאפליקציה מאזינה ל-0.0.0.0:PORT בקוד
-CMD ["node", "server.js"]
+# tini כ-ENTRYPOINT כדי שהסיגנלים יועברו כראוי לכל התהליכים
+ENTRYPOINT ["tini","-g","--"]
+
+CMD ["sh","-lc", "\
+  redis-server --port ${REDIS_PORT:-6379} --bind 127.0.0.1 --save '' --appendonly no & \
+  for i in 1 2 3 4 5; do \
+    redis-cli -h 127.0.0.1 -p ${REDIS_PORT:-6379} ping >/dev/null 2>&1 && break || sleep 0.5; \
+  done; \
+  node server.js \
+"]
