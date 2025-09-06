@@ -3,13 +3,11 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const requestLogger = require('./middlewares/requestLogger');
 
-// הגדרות סביבה
 dotenv.config();
 
-// חיבור למסד הנתונים
+
 connectDB();
 
-// יצירת האפליקציה
 const app = express();
 
 app.use(express.json());
