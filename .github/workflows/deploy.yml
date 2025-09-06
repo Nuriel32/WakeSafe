@@ -9,12 +9,15 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # סודות אמיתיים:
       PROJECT_ID: ${{ secrets.PROJECT_ID }}
-      SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE }}
       REGION: ${{ secrets.GCP_REGION }}
       RUN_NUMBER: ${{ github.run_number }}
-      # optional: override deployed service name per-env
-      SERVICE_DEPLOY: ${{ secrets.CLOUD_RUN_SERVICE }}
+
+      # לא סודיים — תגדיר שם נקי לשירות ולריפו:
+      SERVICE_NAME: wakesafe-api          # <— שים כאן שם חוקי (אותיות קטנות/ספרות/מקפים)
+      SERVICE_DEPLOY: wakesafe-api        # אפשר לשנות לפי סביבה: wakesafe-api-dev/stage/prod
+      IMAGE_REPO_NAME: wakesafe-api       # שם ה-image repo בלי דומיינים/אימיילים
 
     steps:
       - name: Checkout code
@@ -40,32 +43,25 @@ jobs:
           : "${PROJECT_ID:?PROJECT_ID is empty}"
           : "${SERVICE_NAME:?CLOUD_RUN_SERVICE is empty}"
           : "${REGION:?GCP_REGION is empty}"
-
           SERVICE_DEPLOY_RAW="${SERVICE_DEPLOY:-$SERVICE_NAME}"
 
           sanitize_service() {
-            # lower, spaces/underscores -> '-', remove invalid, collapse dashes, trim edges
             local out
             out="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[ _]+/-/g; s/[^a-z0-9-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
-            # must start with a letter
-            if ! echo "$out" | grep -qE '^[a-z]'; then
-              out="svc-$out"
-            fi
-            # max 63 chars
+            if ! echo "$out" | grep -qE '^[a-z]'; then out="svc-$out"; fi
             echo "${out:0:63}"
           }
 
           sanitize_image_repo() {
-            # Docker repo: lowercase, spaces/underscores/slashes -> '-', keep a-z0-9.-, trim dashes
             local out
+            # לריפו של Docker: a-z0-9.- ומקפים; בלי דומיינים/אימיילים
             out="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's|[ _/]+|-|g; s/[^a-z0-9.-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
             echo "$out"
           }
 
           SERVICE_DEPLOY="$(sanitize_service "$SERVICE_DEPLOY_RAW")"
-          IMAGE_REPO="$(sanitize_image_repo "$SERVICE_NAME")"
+          IMAGE_REPO="$(sanitize_image_repo "${IMAGE_REPO_NAME:-$SERVICE_NAME}")"
 
-          # final validations
           if ! echo "$SERVICE_DEPLOY" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
             echo "CLOUD_RUN_SERVICE invalid after normalization: '$SERVICE_DEPLOY'"
             exit 1
@@ -92,4 +88,24 @@ jobs:
 
       - name: Build Docker image
         run: |
-          echo "Building ${IMAGE_URI_
+          echo "Building image..."
+          docker build -t "${IMAGE_URI}" .
+          docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
+
+      - name: Push Docker image to GCR
+        run: |
+          docker push "${IMAGE_URI}"
+          docker push "${IMAGE_URI_LATEST}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${SERVICE_DEPLOY}" \
+            --image "${IMAGE_URI}" \
+            --region "${REGION}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8000 \
+            --memory 512Mi \
+            --cpu 1 \
+            --max-instances 10 \
+            --quiet
