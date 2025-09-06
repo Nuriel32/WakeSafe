@@ -7,7 +7,6 @@ WORKDIR /app
 # מצב Production (משפיע על תלותים/לוגים)
 ENV NODE_ENV=production
 
-# התקנת תלויות לפי lock לקאש יעיל
 COPY package*.json ./
 RUN npm ci --omit=dev
 
