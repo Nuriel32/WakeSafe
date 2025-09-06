@@ -1,23 +1,61 @@
-name: Deploy to Cloud Run
+name: Deploy to Cloud Run (multi-env)
 
 on:
   push:
     branches: [ main ]
 
+concurrency:
+  group: cloud-run-${{ github.ref_name }}-${{ matrix.env.name }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - name: dev
+            service_suffix: -dev
+            image_suffix: -dev
+            mongo_secret: MONGO_URI_DEV
+            jwt_secret: JWT_SECRET_DEV
+            maps_secret: GOOGLE_MAPS_API_KEY_DEV
+            redis_secret: REDIS_URL_DEV
+            bucket_secret: GCS_BUCKET_DEV
+            region_secret: GCP_REGION_DEV
+          - name: stg
+            service_suffix: -stg
+            image_suffix: -stg
+            mongo_secret: MONGO_URI_STG
+            jwt_secret: JWT_SECRET_STG
+            maps_secret: GOOGLE_MAPS_API_KEY_STG
+            redis_secret: REDIS_URL_STG
+            bucket_secret: GCS_BUCKET_STG
+            region_secret: GCP_REGION_STG
+          - name: prod
+            service_suffix: ""
+            image_suffix: ""
+            mongo_secret: MONGO_URI
+            jwt_secret: JWT_SECRET
+            maps_secret: GOOGLE_MAPS_API_KEY
+            redis_secret: REDIS_URL
+            bucket_secret: GCS_BUCKET
+            region_secret: GCP_REGION  # או השאר כללי
 
     env:
-      # סודות אמיתיים:
+      # מזהה הפרויקט והאזור (אזור יכול להיות ייחודי לכל סביבה דרך region_secret)
       PROJECT_ID: ${{ secrets.PROJECT_ID }}
-      REGION: ${{ secrets.GCP_REGION }}
+      REGION: ${{ secrets[matrix.env.region_secret] || secrets.GCP_REGION }}
       RUN_NUMBER: ${{ github.run_number }}
 
-      # לא סודיים — תגדיר שם נקי לשירות ולריפו:
-      SERVICE_NAME: wakesafe-api          # <— שים כאן שם חוקי (אותיות קטנות/ספרות/מקפים)
-      SERVICE_DEPLOY: wakesafe-api        # אפשר לשנות לפי סביבה: wakesafe-api-dev/stage/prod
-      IMAGE_REPO_NAME: wakesafe-api       # שם ה-image repo בלי דומיינים/אימיילים
+      # בסיס שמות (נקי וקבוע)
+      SERVICE_BASE: wakesafe-api
+      IMAGE_REPO_BASE: wakesafe-api
+
+      # שמות לפי Matrix (suffixים שונים לכל סביבה)
+      SERVICE_DEPLOY: ${{ format('{0}{1}', env.SERVICE_BASE, matrix.env.service_suffix) }}
+      IMAGE_REPO_NAME: ${{ format('{0}{1}', env.IMAGE_REPO_BASE, matrix.env.image_suffix) }}
 
     steps:
       - name: Checkout code
@@ -41,9 +79,9 @@ jobs:
         run: |
           set -euo pipefail
           : "${PROJECT_ID:?PROJECT_ID is empty}"
-          : "${SERVICE_NAME:?CLOUD_RUN_SERVICE is empty}"
           : "${REGION:?GCP_REGION is empty}"
-          SERVICE_DEPLOY_RAW="${SERVICE_DEPLOY:-$SERVICE_NAME}"
+          : "${SERVICE_DEPLOY:?SERVICE_DEPLOY is empty}"
+          : "${IMAGE_REPO_NAME:?IMAGE_REPO_NAME is empty}"
 
           sanitize_service() {
             local out
@@ -51,30 +89,28 @@ jobs:
             if ! echo "$out" | grep -qE '^[a-z]'; then out="svc-$out"; fi
             echo "${out:0:63}"
           }
-
           sanitize_image_repo() {
             local out
-            # לריפו של Docker: a-z0-9.- ומקפים; בלי דומיינים/אימיילים
             out="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's|[ _/]+|-|g; s/[^a-z0-9.-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
             echo "$out"
           }
 
-          SERVICE_DEPLOY="$(sanitize_service "$SERVICE_DEPLOY_RAW")"
-          IMAGE_REPO="$(sanitize_image_repo "${IMAGE_REPO_NAME:-$SERVICE_NAME}")"
+          SERVICE_DEPLOY_NORM="$(sanitize_service "$SERVICE_DEPLOY")"
+          IMAGE_REPO_NORM="$(sanitize_image_repo "$IMAGE_REPO_NAME")"
 
-          if ! echo "$SERVICE_DEPLOY" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
-            echo "CLOUD_RUN_SERVICE invalid after normalization: '$SERVICE_DEPLOY'"
+          if ! echo "$SERVICE_DEPLOY_NORM" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
+            echo "CLOUD_RUN_SERVICE invalid after normalization: '$SERVICE_DEPLOY_NORM'"
             exit 1
           fi
-          if ! echo "$IMAGE_REPO" | grep -Eq '^[a-z0-9]+([-.][a-z0-9]+)*$'; then
-            echo "Invalid Docker image repo after normalization: '$IMAGE_REPO'"
+          if ! echo "$IMAGE_REPO_NORM" | grep -Eq '^[a-z0-9]+([-.][a-z0-9]+)*$'; then
+            echo "Invalid Docker image repo after normalization: '$IMAGE_REPO_NORM'"
             exit 1
           fi
 
-          echo "IMAGE_REPO=$IMAGE_REPO" >> "$GITHUB_ENV"
+          echo "SERVICE_DEPLOY=$SERVICE_DEPLOY_NORM" >> "$GITHUB_ENV"
+          echo "IMAGE_REPO=$IMAGE_REPO_NORM" >> "$GITHUB_ENV"
           echo "IMAGE_URI=gcr.io/$PROJECT_ID/$IMAGE_REPO:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
           echo "IMAGE_URI_LATEST=gcr.io/$PROJECT_ID/$IMAGE_REPO:latest" >> "$GITHUB_ENV"
-          echo "SERVICE_DEPLOY=$SERVICE_DEPLOY" >> "$GITHUB_ENV"
 
       - name: Sanity check gcloud
         run: |
@@ -88,17 +124,29 @@ jobs:
 
       - name: Build Docker image
         run: |
-          echo "Building image..."
+          echo "Building image for ${{ matrix.env.name }}..."
           docker build -t "${IMAGE_URI}" .
           docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
 
-           - name: Force service port to 8080 (pre-update)
-             run: |
+      - name: Push Docker image to GCR
+        run: |
+          docker push "${IMAGE_URI}"
+          docker push "${IMAGE_URI_LATEST}"
+
+      - name: Force service port to 8080 (pre-update)
+        run: |
           gcloud run services update "${SERVICE_DEPLOY}" \
             --region "${REGION}" \
             --port 8080 || true
 
       - name: Deploy to Cloud Run
+        env:
+          # הזרקת סודות לפי-סביבה (דרך שמות הסודות שהוגדרו במטריצה)
+          MONGO_URI: ${{ secrets[matrix.env.mongo_secret] }}
+          JWT_SECRET: ${{ secrets[matrix.env.jwt_secret] }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets[matrix.env.maps_secret] }}
+          REDIS_URL: ${{ secrets[matrix.env.redis_secret] }}
+          GCS_BUCKET: ${{ secrets[matrix.env.bucket_secret] }}
         run: |
           gcloud run deploy "${SERVICE_DEPLOY}" \
             --image "${IMAGE_URI}" \
@@ -106,14 +154,29 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --port 8080 \
-            --set-env-vars "PORT=8080,NODE_ENV=production" \
+            --set-env-vars "PORT=8080,NODE_ENV=production,MONGO_URI=${MONGO_URI},JWT_SECRET=${JWT_SECRET},GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY},REDIS_URL=${REDIS_URL},GCS_BUCKET=${GCS_BUCKET}" \
             --memory 512Mi \
             --cpu 1 \
             --max-instances 10 \
             --timeout 300 \
             --quiet
+          
 
-      - name: Verify effective port
+      - name: Verify effective port & URL
         run: |
+          echo "Service: ${SERVICE_DEPLOY} (${ {matrix.env.name} })"
           gcloud run services describe "${SERVICE_DEPLOY}" --region "${REGION}" \
             --format='value(spec.template.spec.containers[0].ports[0].containerPort)'
+          gcloud run services describe "${SERVICE_DEPLOY}" --region "${REGION}" \
+            --format='value(status.url)'
+
+      - name: Tail Cloud Run logs on failure
+        if: failure()
+        run: |
+          REV=$(gcloud run services describe "${SERVICE_DEPLOY}" --region "${REGION}" --format='value(status.latestCreatedRevisionName)' || true)
+          if [ -n "$REV" ]; then
+            echo "==== Logs for revision: $REV ===="
+            gcloud run revisions logs read "$REV" --region "${REGION}" --limit=200 || true
+          else
+            echo "No revision found"
+          fi
