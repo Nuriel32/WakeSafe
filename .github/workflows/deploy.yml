@@ -110,19 +110,19 @@ jobs:
             --port 8080 || true
 
       - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy "${SERVICE_DEPLOY}" \
-            --image "${IMAGE_URI}" \
-            --region "${REGION}" \
-            --platform managed \
-            --allow-unauthenticated \
-            --port 8080 \
-            --set-env-vars "PORT=8080,NODE_ENV=production,MONGO_URI=${MONGO_URI},JWT_SECRET=${JWT_SECRET},GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY},REDIS_URL=${REDIS_URL},GCS_BUCKET=${GCS_BUCKET}" \
-            --memory 512Mi \
-            --cpu 1 \
-            --max-instances 10 \
-            --timeout 300 \
-            --quiet
+      run: |
+            gcloud run deploy "${SERVICE_DEPLOY}" \
+              --image "${IMAGE_URI}" \
+              --region "${REGION}" \
+              --platform managed \
+              --allow-unauthenticated \
+              --port 8080 \
+              --set-env-vars "NODE_ENV=production,MONGO_URI=${MONGO_URI},JWT_SECRET=${JWT_SECRET},GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY},REDIS_URL=${REDIS_URL},GCS_BUCKET=${GCS_BUCKET}" \
+              --memory 512Mi \
+              --cpu 1 \
+              --max-instances 10 \
+              --timeout 300 \
+              --quiet
           # אם אתם משתמשים ב-Memorystore ל-Redis:
           # הוסיפו: --vpc-connector "<CONNECTOR_NAME>" --vpc-egress "all-traffic"
           # ושנו להזריק REDIS_HOST/REDIS_PORT/REDIS_PASSWORD במקום REDIS_URL.
