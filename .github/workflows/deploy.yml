@@ -13,19 +13,25 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # Core project settings
       PROJECT_ID: ${{ secrets.PROJECT_ID }}
       REGION: ${{ secrets.GCP_REGION }}
       RUN_NUMBER: ${{ github.run_number }}
 
+      # Clean names (avoid secrets here to prevent redaction)
       SERVICE_NAME: wakesafe-api
       SERVICE_DEPLOY: wakesafe-api
       IMAGE_REPO_NAME: wakesafe-api
 
+      # App secrets
       MONGO_URI: ${{ secrets.MONGO_URI }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-      REDIS_URL: ${{ secrets.REDIS_URL }}
       GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+
+      # Redis running locally inside the container
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
 
     steps:
       - name: Checkout code
@@ -55,13 +61,16 @@ jobs:
 
           sanitize_service() {
             local out
-            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[ _]+/-/g; s/[^a-z0-9-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
+            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[ _]+/-/g; s/[^a-z0-9-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
             if ! echo "$out" | grep -qE '^[a-z]'; then out="svc-$out"; fi
             echo "${out:0:63}"
           }
+
           sanitize_image_repo() {
             local out
-            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's|[ _/]+|-|g; s/[^a-z0-9.-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
+            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's|[ _/]+|-|g; s/[^a-z0-9.-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
             echo "$out"
           }
 
@@ -110,22 +119,19 @@ jobs:
             --port 8080 || true
 
       - name: Deploy to Cloud Run
-      run: |
-            gcloud run deploy "${SERVICE_DEPLOY}" \
-              --image "${IMAGE_URI}" \
-              --region "${REGION}" \
-              --platform managed \
-              --allow-unauthenticated \
-              --port 8080 \
-              --set-env-vars "NODE_ENV=production,MONGO_URI=${MONGO_URI},JWT_SECRET=${JWT_SECRET},GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY},REDIS_URL=${REDIS_URL},GCS_BUCKET=${GCS_BUCKET}" \
-              --memory 512Mi \
-              --cpu 1 \
-              --max-instances 10 \
-              --timeout 300 \
-              --quiet
-          # אם אתם משתמשים ב-Memorystore ל-Redis:
-          # הוסיפו: --vpc-connector "<CONNECTOR_NAME>" --vpc-egress "all-traffic"
-          # ושנו להזריק REDIS_HOST/REDIS_PORT/REDIS_PASSWORD במקום REDIS_URL.
+        run: |
+          gcloud run deploy "${SERVICE_DEPLOY}" \
+            --image "${IMAGE_URI}" \
+            --region "${REGION}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --set-env-vars "NODE_ENV=production,MONGO_URI=${MONGO_URI},JWT_SECRET=${JWT_SECRET},GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY},GCS_BUCKET=${GCS_BUCKET},REDIS_HOST=${REDIS_HOST},REDIS_PORT=${REDIS_PORT}" \
+            --memory 512Mi \
+            --cpu 1 \
+            --max-instances 10 \
+            --timeout 300 \
+            --quiet
 
       - name: Verify effective port & URL
         run: |
