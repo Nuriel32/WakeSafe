@@ -20,6 +20,7 @@ jobs:
       # Core project settings
       PROJECT_ID: ${{ secrets.PROJECT_ID }}
       REGION: ${{ secrets.GCP_REGION }}
+      REPOSITORY: wakesafe
       RUN_NUMBER: ${{ github.run_number }}
 
       # Clean names (avoid secrets here to prevent redaction)
@@ -92,8 +93,8 @@ jobs:
 
           echo "SERVICE_DEPLOY=$SERVICE_DEPLOY_NORM" >> "$GITHUB_ENV"
           echo "IMAGE_REPO=$IMAGE_REPO_NORM" >> "$GITHUB_ENV"
-          echo "IMAGE_URI=gcr.io/$PROJECT_ID/$IMAGE_REPO_NORM:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
-          echo "IMAGE_URI_LATEST=gcr.io/$PROJECT_ID/$IMAGE_REPO_NORM:latest" >> "$GITHUB_ENV"
+          echo "IMAGE_URI=${{ env.REGION }}-docker.pkg.dev/$PROJECT_ID/${{ env.REPOSITORY }}/$IMAGE_REPO_NORM:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
+          echo "IMAGE_URI_LATEST=${{ env.REGION }}-docker.pkg.dev/$PROJECT_ID/${{ env.REPOSITORY }}/$IMAGE_REPO_NORM:latest" >> "$GITHUB_ENV"
 
       - name: Sanity check gcloud
         run: |
@@ -102,8 +103,8 @@ jobs:
           gcloud config list
           gcloud auth print-access-token >/dev/null
 
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker gcr.io --quiet
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       - name: Build Docker image
         run: |
