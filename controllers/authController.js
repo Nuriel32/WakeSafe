@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const cache = require('../services/cacheService');
 const User = require('../models/Users');
 const DriverSession = require('../models/DriverSession');
