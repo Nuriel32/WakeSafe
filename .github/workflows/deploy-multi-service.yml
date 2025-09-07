@@ -5,15 +5,9 @@ on:
     branches: [main]
     paths:
       - 'ai_server/**'
+      - 'server/**'
       - 'apps/**'
-      - 'controllers/**'
-      - 'routes/**'
-      - 'services/**'
-      - 'models/**'
-      - 'middlewares/**'
-      - 'server.js'
-      - 'app.js'
-      - 'package.json'
+      - '.github/workflows/deploy-multi-service.yml'
   pull_request:
     branches: [main]
 
