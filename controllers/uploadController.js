@@ -3,6 +3,7 @@ const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
+const aiProcessingService = require('../services/aiProcessingService');
 
 /**
  * Handles photo upload from the client with enhanced metadata for AI processing
@@ -13,7 +14,7 @@ const crypto = require('crypto');
  */
 async function uploadPhoto(req, res) {
     try {
-        const { sessionId, location, clientMeta } = req.body;
+        const { sessionId, location, clientMeta, sequenceNumber, timestamp, folderType } = req.body;
         const userId = req.user.id;
         const file = req.file;
         const session = req.session;
@@ -23,11 +24,17 @@ async function uploadPhoto(req, res) {
             return res.status(400).json({ error: 'Missing photo or sessionId' });
         }
 
+        // Determine folder type (before-ai or after-ai)
+        const photoFolderType = folderType || 'before-ai';
+
         // Prepare metadata for AI processing
         const metadata = {
             processingStatus: 'pending',
             location: location ? JSON.parse(location) : null,
             clientMeta: clientMeta ? JSON.parse(clientMeta) : null,
+            sequenceNumber: sequenceNumber ? parseInt(sequenceNumber) : null,
+            captureTimestamp: timestamp ? parseInt(timestamp) : Date.now(),
+            folderType: photoFolderType,
             deviceInfo: {
                 userAgent: req.headers['user-agent'],
                 contentType: file.mimetype,
@@ -35,7 +42,7 @@ async function uploadPhoto(req, res) {
             }
         };
 
-        const { gcsPath, smartName, metadata: fileMetadata } = await uploadFile(file, userId, sessionId, metadata);
+        const { gcsPath, smartName, metadata: fileMetadata } = await uploadFile(file, userId, sessionId, metadata, photoFolderType);
 
         // Create photo document with AI-ready data
         const photo = await Photo.create({
@@ -45,6 +52,9 @@ async function uploadPhoto(req, res) {
             name: smartName,
             location: metadata.location,
             clientMeta: metadata.clientMeta,
+            sequenceNumber: metadata.sequenceNumber,
+            captureTimestamp: metadata.captureTimestamp,
+            folderType: photoFolderType,
             prediction: 'pending', // Will be updated by AI server
             aiProcessingStatus: 'pending'
         });
@@ -54,6 +64,12 @@ async function uploadPhoto(req, res) {
         session.photos.push(photo._id);
         await session.save();
 
+        // Generate signed URL for AI processing
+        const signedUrl = await generateSignedUrl(gcsPath, 3600); // 1 hour expiry
+
+        // Queue photo for AI processing
+        aiProcessingService.queuePhotoForProcessing(photo, signedUrl);
+
         logger.info(`From UploadController: Photo uploaded by user ${userId} to session ${sessionId}. Photo ID: ${photo._id}, GCS Path: ${gcsPath}`);
         
         res.status(201).json({ 
@@ -61,7 +77,8 @@ async function uploadPhoto(req, res) {
             photoId: photo._id,
             gcsPath,
             processingStatus: 'pending',
-            metadata: fileMetadata
+            metadata: fileMetadata,
+            sequenceNumber: metadata.sequenceNumber
         });
     } catch (err) {
         logger.error(`From UploadController: Photo upload failed for user ${req.user?.id}: ${err.message}`);

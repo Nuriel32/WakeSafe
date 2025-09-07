@@ -12,11 +12,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { useSession } from '../../hooks/useSession';
 import { CONFIG } from '../../config';
+import { cameraService, SessionPhotoData } from '../../services/cameraService';
+import { photoUploadService, UploadProgress } from '../../services/photoUploadService';
+import { websocketService, FatigueAlert } from '../../services/websocketService';
 
 export const DashboardScreen: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const { currentSession, startSession, endSession, loading } = useSession();
   const [sessionDuration, setSessionDuration] = useState('00:00:00');
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
+    totalPhotos: 0,
+    uploadedPhotos: 0,
+    failedPhotos: 0,
+  });
+  const [photosCaptured, setPhotosCaptured] = useState(0);
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
+  const [fatigueAlerts, setFatigueAlerts] = useState<FatigueAlert[]>([]);
+  const [lastFatigueAlert, setLastFatigueAlert] = useState<FatigueAlert | null>(null);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -44,10 +57,62 @@ export const DashboardScreen: React.FC = () => {
     };
   }, [currentSession]);
 
+  // WebSocket connection and event handling
+  useEffect(() => {
+    if (token && user) {
+      // Set up WebSocket event handlers
+      websocketService.setOnFatigueAlert(handleFatigueAlert);
+      websocketService.setOnConnectionChange(setIsWebSocketConnected);
+      websocketService.setOnError((error) => {
+        console.error('WebSocket error:', error);
+        Alert.alert('Connection Error', error);
+      });
+
+      // Connect to WebSocket
+      websocketService.connect(token).catch((error) => {
+        console.error('Failed to connect to WebSocket:', error);
+        Alert.alert('Connection Failed', 'Unable to connect to real-time updates');
+      });
+
+      return () => {
+        websocketService.disconnect();
+      };
+    }
+  }, [token, user]);
+
+  const handleFatigueAlert = (alert: FatigueAlert) => {
+    console.log('Fatigue alert received:', alert);
+    setLastFatigueAlert(alert);
+    setFatigueAlerts(prev => [alert, ...prev.slice(0, 9)]); // Keep last 10 alerts
+
+    // Show alert based on severity
+    if (alert.alert.actionRequired) {
+      Alert.alert(
+        '⚠️ FATIGUE ALERT',
+        alert.alert.message,
+        [
+          { text: 'OK', style: 'default' },
+          { text: 'End Session', style: 'destructive', onPress: () => handleEndSession() }
+        ],
+        { cancelable: false }
+      );
+    } else if (alert.alert.severity === 'medium') {
+      Alert.alert('⚠️ Drowsiness Detected', alert.alert.message);
+    }
+  };
+
   const handleStartSession = async () => {
     try {
-      await startSession();
+      const session = await startSession();
       Alert.alert('Success', CONFIG.SUCCESS.SESSION_START);
+      
+      // Start continuous photo capture
+      if (session && user && token) {
+        await startContinuousCapture(session._id, user.id);
+        // Emit WebSocket events
+        websocketService.emitSessionStart(session._id);
+        websocketService.emitContinuousCaptureStart(session._id);
+      }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to start session');
     }
@@ -66,6 +131,13 @@ export const DashboardScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Stop continuous photo capture
+              stopContinuousCapture();
+              
+              // Emit WebSocket events
+              websocketService.emitContinuousCaptureStop(currentSession._id);
+              websocketService.emitSessionEnd(currentSession._id);
+              
               await endSession(currentSession._id);
               Alert.alert('Success', CONFIG.SUCCESS.SESSION_END);
             } catch (error: any) {
@@ -75,6 +147,78 @@ export const DashboardScreen: React.FC = () => {
         },
       ]
     );
+  };
+
+  const startContinuousCapture = async (sessionId: string, userId: string) => {
+    if (!token) {
+      Alert.alert('Error', 'Authentication token not available');
+      return;
+    }
+
+    try {
+      const success = await cameraService.startContinuousCapture(
+        sessionId,
+        userId,
+        handlePhotoCaptured,
+        handleCaptureError
+      );
+
+      if (success) {
+        setIsCapturing(true);
+        setPhotosCaptured(0);
+        photoUploadService.reset();
+        console.log('Continuous photo capture started');
+      } else {
+        Alert.alert('Error', 'Failed to start camera capture');
+      }
+    } catch (error) {
+      console.error('Error starting continuous capture:', error);
+      Alert.alert('Error', 'Failed to start camera capture');
+    }
+  };
+
+  const stopContinuousCapture = () => {
+    cameraService.stopContinuousCapture();
+    setIsCapturing(false);
+    console.log('Continuous photo capture stopped');
+  };
+
+  const handlePhotoCaptured = async (photo: SessionPhotoData) => {
+    console.log(`Photo captured: sequence ${photo.sequenceNumber}`);
+    setPhotosCaptured(prev => prev + 1);
+    
+    // Emit WebSocket event
+    websocketService.emitPhotoCaptured({
+      sequenceNumber: photo.sequenceNumber,
+      timestamp: photo.timestamp,
+      sessionId: photo.sessionId
+    });
+    
+    // Upload photo immediately
+    await photoUploadService.uploadPhoto(
+      photo,
+      token!,
+      handleUploadProgress,
+      handleUploadComplete,
+      handleUploadError
+    );
+  };
+
+  const handleCaptureError = (error: string) => {
+    console.error('Camera capture error:', error);
+    Alert.alert('Camera Error', error);
+  };
+
+  const handleUploadProgress = (progress: UploadProgress) => {
+    setUploadProgress(progress);
+  };
+
+  const handleUploadComplete = (result: any) => {
+    console.log(`Photo ${result.sequenceNumber} uploaded successfully`);
+  };
+
+  const handleUploadError = (error: string) => {
+    console.error('Upload error:', error);
   };
 
   const handleLogout = () => {
@@ -178,15 +322,61 @@ export const DashboardScreen: React.FC = () => {
           
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{currentSession?.totalImagesUploaded || 0}</Text>
+              <Text style={styles.statValue}>{photosCaptured}</Text>
+              <Text style={styles.statLabel}>Photos Captured</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{uploadProgress.uploadedPhotos}</Text>
               <Text style={styles.statLabel}>Photos Uploaded</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{currentSession?.photos?.length || 0}</Text>
-              <Text style={styles.statLabel}>Total Photos</Text>
+              <Text style={styles.statValue}>{uploadProgress.failedPhotos}</Text>
+              <Text style={styles.statLabel}>Upload Failed</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: isCapturing ? '#10b981' : '#64748b' }]}>
+                {isCapturing ? '●' : '○'}
+              </Text>
+              <Text style={styles.statLabel}>Camera Status</Text>
             </View>
           </View>
         </View>
+
+        {/* WebSocket Connection Status */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Connection Status</Text>
+          </View>
+          <View style={styles.connectionStatus}>
+            <View style={[styles.statusIndicator, { backgroundColor: isWebSocketConnected ? '#10b981' : '#ef4444' }]} />
+            <Text style={styles.statusText}>
+              {isWebSocketConnected ? 'Connected to Server' : 'Disconnected'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Fatigue Alerts */}
+        {lastFatigueAlert && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Latest Fatigue Detection</Text>
+            </View>
+            <View style={[styles.alertContainer, { 
+              backgroundColor: lastFatigueAlert.alert.severity === 'high' ? '#fef2f2' : 
+                             lastFatigueAlert.alert.severity === 'medium' ? '#fffbeb' : '#f0f9ff'
+            }]}>
+              <Text style={[styles.alertText, {
+                color: lastFatigueAlert.alert.severity === 'high' ? '#dc2626' : 
+                       lastFatigueAlert.alert.severity === 'medium' ? '#d97706' : '#2563eb'
+              }]}>
+                {lastFatigueAlert.alert.message}
+              </Text>
+              <Text style={styles.alertConfidence}>
+                Confidence: {Math.round(lastFatigueAlert.confidence * 100)}%
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Quick Actions */}
         <View style={styles.card}>
@@ -257,6 +447,37 @@ const styles = StyleSheet.create({
   logoutText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  statusIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  alertContainer: {
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  alertText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  alertConfidence: {
+    fontSize: 14,
+    color: '#6b7280',
   },
   card: {
     backgroundColor: '#fff',

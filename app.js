@@ -5,10 +5,22 @@ const requestLogger = require('./middlewares/requestLogger');
 
 dotenv.config();
 
-
 connectDB();
 
 const app = express();
+
+// CORS middleware for mobile app access
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
 
 app.use(express.json());
 app.use(requestLogger);
@@ -26,6 +38,5 @@ app.use('/api/fatigue', require('./routes/fatigueRoutes'));
 app.use('/api/location', require('./routes/locationRoutes'));
 app.use('/api/upload', require('./routes/uploadRoutes'));
 app.use('/api/photos', require('./routes/photoRoutes'));
-
 
 module.exports = app;

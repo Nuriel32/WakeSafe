@@ -1,8 +1,9 @@
 // Configuration for WakeSafe Mobile App
 export const CONFIG = {
   // API Configuration
-  API_BASE_URL: __DEV__ ? 'http://192.168.1.133:8080/api' : 'https://your-production-domain.com/api',
-  WS_URL: __DEV__ ? 'http://192.168.1.133:8080' : 'https://your-production-domain.com',
+  // Force production server for now to test Cloud Run deployment
+  API_BASE_URL: 'https://wakesafe-api-227831302277.us-central1.run.app/api',
+  WS_URL: 'https://wakesafe-api-227831302277.us-central1.run.app',
   
   // Storage Keys
   TOKEN_KEY: 'wakesafe_token',

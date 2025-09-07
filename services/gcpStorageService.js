@@ -18,16 +18,17 @@ const bucket = storage.bucket(bucketName);
 
 /**
  * Upload a photo buffer to GCS with optimized structure for AI analysis:
- * Structure: drivers/{userId}/sessions/{sessionId}/photos/{timestamp}_{random}.{ext}
+ * Structure: drivers/{userId}/sessions/{sessionId}/{folderType}/{timestamp}_{random}.{ext}
  * 
  * @param {Object} file - Multer file object
  * @param {string} userId - Driver's user ID
  * @param {string} sessionId - Active session ID
  * @param {Object} metadata - Additional metadata for AI processing
+ * @param {string} folderType - 'before-ai' or 'after-ai'
  * @returns {Object} Upload result with paths and metadata
  */
-async function uploadFile(file, userId, sessionId, metadata = {}) {
-  const timestamp = Date.now();
+async function uploadFile(file, userId, sessionId, metadata = {}, folderType = 'before-ai') {
+  const timestamp = metadata.captureTimestamp || Date.now();
   const random = crypto.randomBytes(4).toString('hex');
   const extension = file.originalname.split('.').pop().toLowerCase();
   
@@ -37,9 +38,10 @@ async function uploadFile(file, userId, sessionId, metadata = {}) {
     throw new Error(`Unsupported file format: ${extension}. Allowed: ${allowedExtensions.join(', ')}`);
   }
 
-  // Optimized naming for AI processing
-  const smartName = `${timestamp}_${random}.${extension}`;
-  const gcsPath = `drivers/${userId}/sessions/${sessionId}/photos/${smartName}`;
+  // Optimized naming for AI processing with sequence number
+  const sequenceNumber = metadata.sequenceNumber ? metadata.sequenceNumber.toString().padStart(6, '0') : '000000';
+  const smartName = `${sequenceNumber}_${timestamp}_${random}.${extension}`;
+  const gcsPath = `drivers/${userId}/sessions/${sessionId}/${folderType}/${smartName}`;
 
   const blob = bucket.file(gcsPath);
   

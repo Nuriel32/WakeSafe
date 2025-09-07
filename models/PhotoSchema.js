@@ -7,6 +7,15 @@ const photoSchema = new mongoose.Schema({
     gcsPath: { type: String, required: true },
     uploadedAt: { type: Date, default: Date.now },
 
+    // Continuous Capture Fields
+    sequenceNumber: { type: Number, required: true },
+    captureTimestamp: { type: Number, required: true },
+    folderType: { 
+        type: String, 
+        enum: ['before-ai', 'after-ai'], 
+        default: 'before-ai' 
+    },
+
     // AI Processing Fields
     prediction: { 
         type: String, 
@@ -54,7 +63,10 @@ const photoSchema = new mongoose.Schema({
         { userId: 1, sessionId: 1 },
         { aiProcessingStatus: 1 },
         { prediction: 1 },
-        { uploadedAt: -1 }
+        { uploadedAt: -1 },
+        { sequenceNumber: 1 },
+        { folderType: 1 },
+        { captureTimestamp: -1 }
     ]
 });
 
