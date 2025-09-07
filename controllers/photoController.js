@@ -187,10 +187,98 @@ exports.getSessionPhotos = async (req, res) => {
     }
 };
 
+exports.getPhotoStats = async (req, res) => {
+    try {
+        const stats = await Photo.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalPhotos: { $sum: 1 },
+                    pendingPhotos: {
+                        $sum: { $cond: [{ $eq: ['$aiProcessingStatus', 'pending'] }, 1, 0] }
+                    },
+                    processingPhotos: {
+                        $sum: { $cond: [{ $eq: ['$aiProcessingStatus', 'processing'] }, 1, 0] }
+                    },
+                    completedPhotos: {
+                        $sum: { $cond: [{ $eq: ['$aiProcessingStatus', 'completed'] }, 1, 0] }
+                    },
+                    failedPhotos: {
+                        $sum: { $cond: [{ $eq: ['$aiProcessingStatus', 'failed'] }, 1, 0] }
+                    },
+                    alertPhotos: {
+                        $sum: { $cond: [{ $eq: ['$prediction', 'alert'] }, 1, 0] }
+                    },
+                    drowsyPhotos: {
+                        $sum: { $cond: [{ $eq: ['$prediction', 'drowsy'] }, 1, 0] }
+                    },
+                    sleepingPhotos: {
+                        $sum: { $cond: [{ $eq: ['$prediction', 'sleeping'] }, 1, 0] }
+                    },
+                    unknownPhotos: {
+                        $sum: { $cond: [{ $eq: ['$prediction', 'unknown'] }, 1, 0] }
+                    },
+                    avgProcessingTime: { $avg: '$aiResults.processingTime' }
+                }
+            }
+        ]);
+
+        const result = stats[0] || {
+            totalPhotos: 0,
+            pendingPhotos: 0,
+            processingPhotos: 0,
+            completedPhotos: 0,
+            failedPhotos: 0,
+            alertPhotos: 0,
+            drowsyPhotos: 0,
+            sleepingPhotos: 0,
+            unknownPhotos: 0,
+            avgProcessingTime: 0
+        };
+
+        // Calculate error rate
+        const errorRate = result.totalPhotos > 0 
+            ? (result.failedPhotos / result.totalPhotos) * 100 
+            : 0;
+
+        // Calculate success rate
+        const successRate = result.totalPhotos > 0 
+            ? (result.completedPhotos / result.totalPhotos) * 100 
+            : 0;
+
+        res.json({
+            totalPhotos: result.totalPhotos,
+            processingStatus: {
+                pending: result.pendingPhotos,
+                processing: result.processingPhotos,
+                completed: result.completedPhotos,
+                failed: result.failedPhotos
+            },
+            predictions: {
+                alert: result.alertPhotos,
+                drowsy: result.drowsyPhotos,
+                sleeping: result.sleepingPhotos,
+                unknown: result.unknownPhotos
+            },
+            performance: {
+                avgProcessingTime: Math.round(result.avgProcessingTime || 0),
+                errorRate: Math.round(errorRate * 100) / 100,
+                successRate: Math.round(successRate * 100) / 100
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        logger.error(`Error getting photo stats: ${error.message}`);
+        res.status(500).json({ error: 'Failed to get photo statistics' });
+    }
+};
+
 module.exports = {
     deleteSinglePhoto,
     deleteMultiplePhotos,
     getUnprocessedPhotos: exports.getUnprocessedPhotos,
     updatePhotoAIResults: exports.updatePhotoAIResults,
-    getSessionPhotos: exports.getSessionPhotos
+    getSessionPhotos: exports.getSessionPhotos,
+    getPhotoStats: exports.getPhotoStats
 };
