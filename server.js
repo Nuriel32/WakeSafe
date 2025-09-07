@@ -1,40 +1,39 @@
 // server.js
+// Non-blocking startup for Cloud Run: start HTTP immediately, init Mongo/Redis in background.
+// Avoid heavy requires at top-level that might block or throw before listen().
+
 const http = require('http');
 const app = require('./app');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const logger = require('./utils/logger');
-const cache = require('./services/cacheService');
 
 // ---- Config ----
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = '0.0.0.0';
-const JWT_SECRET = process.env.JWT_SECRET;
-
-// Optional CORS origin for Socket.IO
+const JWT_SECRET = process.env.JWT_SECRET || '';
 const CORS_ORIGIN = process.env.SOCKET_IO_ORIGIN || '*';
 
-// Redis local-in-container defaults (Dockerfile launches redis-server)
+// Redis local-in-container defaults (Dockerfile launches redis-server separately)
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
-const REDIS_PORT = Number(process.env.REDIS_PORT) || 6379;
+const REDIS_PORT = Number(process.env.REDIS_PORT || 6379);
 
 // ---- Health endpoints (ready immediately) ----
-app.get('/healthz', (_req, res) => res.status(200).send('ok'));   // readiness
-app.get('/readyz', (_req, res) => res.status(200).send('ready')); // alias
+app.get('/healthz', (_req, res) => res.status(200).send('ok'));
+app.get('/readyz', (_req, res) => res.status(200).send('ready'));
 
 // ---- HTTP server + Socket.IO ----
 const server = http.createServer(app);
-
-// Keep-alive tuning is helpful on serverless
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
 const io = new Server(server, {
   cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] },
   path: '/socket.io',
-  // Consider increasing pingTimeout if clients roam on mobile networks
-  // pingTimeout: 25000,
 });
+
+// ---- Lazy revocation check (non-blocking before Redis is ready) ----
+let isTokenRevoked = async (_jti) => false;
 
 // ---- Socket.IO auth middleware ----
 io.use(async (socket, next) => {
@@ -49,18 +48,18 @@ io.use(async (socket, next) => {
     let decoded;
     try {
       decoded = jwt.verify(token, JWT_SECRET);
-    } catch (e) {
+    } catch {
       return next(new Error('Authentication failed'));
     }
 
     const jti = decoded.jti;
     if (jti) {
-      const revoked = await cache.isTokenRevoked(jti);
+      const revoked = await isTokenRevoked(jti);
       if (revoked) return next(new Error('Token has been revoked'));
     }
 
     socket.userId = decoded.id;
-    socket.jti = decoded.jti;
+    socket.jti = jti;
     return next();
   } catch (err) {
     safeLog('error', `WebSocket authentication failed: ${err.message}`);
@@ -186,6 +185,19 @@ server.listen(PORT, HOST, () => {
 // ---- Background initialization (non-blocking) ----
 async function initBackground() {
   await Promise.allSettled([connectMongo(), connectRedis()]);
+  const client = app.locals?.redis;
+  if (client) {
+    isTokenRevoked = async (jti) => {
+      if (!jti) return false;
+      try {
+        const val = await client.get(`revoked:${jti}`);
+        return val === '1' || val === 'true';
+      } catch (e) {
+        safeLog('error', `Revocation check failed: ${e.message}`);
+        return false; // fail-open for availability
+      }
+    };
+  }
 }
 
 async function connectMongo() {
@@ -195,11 +207,9 @@ async function connectMongo() {
     return;
   }
   try {
+    // Require mongoose only here to avoid heavy top-level require
     const mongoose = require('mongoose');
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 5000,
-      // autoReconnect behavior is default in modern mongoose; configurable if needed
-    });
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
     safeLog('info', 'Mongo connected');
   } catch (err) {
     safeLog('error', `Mongo connect failed (continuing): ${err.message}`);
@@ -209,11 +219,12 @@ async function connectMongo() {
 let redisClient;
 async function connectRedis() {
   try {
+    // Require redis only here to avoid blocking top-level import
     const { createClient } = require('redis');
     redisClient = createClient({ socket: { host: REDIS_HOST, port: REDIS_PORT } });
     redisClient.on('error', (err) => safeLog('error', `Redis error: ${err.message}`));
     await redisClient.connect();
-    app.locals.redis = redisClient; // expose if needed by routes/services
+    app.locals.redis = redisClient;
     safeLog('info', `Redis connected at ${REDIS_HOST}:${REDIS_PORT}`);
   } catch (err) {
     safeLog('error', `Redis connect failed (continuing): ${err.message}`);
@@ -244,12 +255,10 @@ function safeLog(level, msg) {
     if (logger && typeof logger[level] === 'function') {
       logger[level](msg);
     } else {
-      // Fallback to console
       const map = { info: 'log', warn: 'warn', error: 'error' };
       console[map[level] || 'log'](msg);
     }
   } catch {
-    // Ensure logging never throws
     console.log(msg);
   }
 }
