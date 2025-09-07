@@ -189,5 +189,8 @@ exports.getSessionPhotos = async (req, res) => {
 
 module.exports = {
     deleteSinglePhoto,
-    deleteMultiplePhotos
+    deleteMultiplePhotos,
+    getUnprocessedPhotos: exports.getUnprocessedPhotos,
+    updatePhotoAIResults: exports.updatePhotoAIResults,
+    getSessionPhotos: exports.getSessionPhotos
 };
