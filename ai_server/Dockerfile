@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     libdlib-dev \
     libblas-dev \
     liblapack-dev \
-    libatlas-base-dev \
+    libatlas3-base \
     gfortran \
     wget \
     curl \
