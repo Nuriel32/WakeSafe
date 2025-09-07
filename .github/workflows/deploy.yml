@@ -107,6 +107,16 @@ jobs:
           docker build -t "${IMAGE_URI}" .
           docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
 
+      - name: Container smoke test (local)
+        run: |
+          ID=$(docker run -d -e PORT=8080 -p 8080:8080 "${IMAGE_URI}")
+          for i in {1..30}; do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          curl -fsS http://localhost:8080/healthz || (echo "Healthcheck failed"; docker logs "$ID"; exit 1)
+          docker rm -f "$ID" >/dev/null 2>&1 || true
+
       - name: Push Docker image to GCR
         run: |
           docker push "${IMAGE_URI}"
@@ -115,12 +125,14 @@ jobs:
       - name: Force service port to 8080 (pre-update)
         run: |
           gcloud run services update "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
             --region "${REGION}" \
             --port 8080 || true
 
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
             --image "${IMAGE_URI}" \
             --region "${REGION}" \
             --platform managed \
@@ -136,18 +148,28 @@ jobs:
       - name: Verify effective port & URL
         run: |
           echo "Service: ${SERVICE_DEPLOY}"
-          gcloud run services describe "${SERVICE_DEPLOY}" --region "${REGION}" \
+          gcloud run services describe "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
             --format='value(spec.template.spec.containers[0].ports[0].containerPort)'
-          gcloud run services describe "${SERVICE_DEPLOY}" --region "${REGION}" \
+          gcloud run services describe "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
             --format='value(status.url)'
 
       - name: Tail Cloud Run logs on failure
         if: failure()
         run: |
-          REV=$(gcloud run services describe "${SERVICE_DEPLOY}" --region "${REGION}" --format='value(status.latestCreatedRevisionName)' || true)
+          REV=$(gcloud run services describe "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --format='value(status.latestCreatedRevisionName)' || true)
           if [ -n "$REV" ]; then
             echo "==== Logs for revision: $REV ===="
-            gcloud run revisions logs read "$REV" --region "${REGION}" --limit=200 || true
+            gcloud run revisions logs read "$REV" \
+              --project "${PROJECT_ID}" \
+              --region "${REGION}" \
+              --limit=200 || true
           else
             echo "No revision found"
           fi
