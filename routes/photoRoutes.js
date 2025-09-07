@@ -6,7 +6,7 @@ const checkTokenRevoked = require('../middlewares/checkTokenRevoked');
 const {
     deletePhotoById,
     deletePhotosInBulk
-} = require('../controllers/photoAPIController');
+} = require('../controllers/photoApiController');
 
 const {
     getUnprocessedPhotos,
