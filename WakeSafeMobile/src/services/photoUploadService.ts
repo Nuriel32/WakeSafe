@@ -99,40 +99,112 @@ class PhotoUploadService {
     }
   }
 
-  private async performUpload(formData: FormData, token: string): Promise<UploadResult> {
+  private async performUpload(photo: SessionPhotoData, token: string): Promise<UploadResult> {
+    try {
+      // Step 1: Get presigned URL from backend
+      console.log('Getting presigned URL for upload...');
+      const presignedResponse = await fetch(`${CONFIG.API_BASE_URL}/upload/presigned`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: `photo_${photo.sequenceNumber.toString().padStart(6, '0')}_${photo.timestamp}.jpg`,
+          sessionId: photo.sessionId,
+          sequenceNumber: photo.sequenceNumber,
+          timestamp: photo.timestamp,
+          location: await this.getCurrentLocation(),
+          clientMeta: {
+            userAgent: 'WakeSafe Mobile App',
+            timestamp: Date.now(),
+            captureType: 'continuous',
+            sequenceNumber: photo.sequenceNumber,
+          }
+        })
+      });
+
+      if (!presignedResponse.ok) {
+        throw new Error(`Failed to get presigned URL: ${presignedResponse.status}`);
+      }
+
+      const presignedData = await presignedResponse.json();
+      console.log('Presigned URL received:', presignedData.presignedUrl);
+
+      // Step 2: Upload directly to GCS using presigned URL
+      console.log('Uploading to GCS...');
+      const uploadResponse = await this.uploadToGCS(photo.uri, presignedData, token);
+
+      if (uploadResponse.success) {
+        // Step 3: Confirm upload with backend
+        console.log('Confirming upload with backend...');
+        const confirmResponse = await fetch(`${CONFIG.API_BASE_URL}/upload/confirm`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            photoId: presignedData.photoId,
+            uploadSuccess: true
+          })
+        });
+
+        if (confirmResponse.ok) {
+          const confirmData = await confirmResponse.json();
+          console.log('Upload confirmed, AI processing queued:', confirmData.aiProcessingQueued);
+        }
+      }
+
+      return uploadResponse;
+    } catch (error) {
+      console.error('Upload process failed:', error);
+      return {
+        success: false,
+        error: `Upload failed: ${error}`,
+        sequenceNumber: photo.sequenceNumber,
+      };
+    }
+  }
+
+  private async uploadToGCS(uri: string, presignedData: any, token: string): Promise<UploadResult> {
     return new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
 
       xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
           const progress = (event.loaded / event.total) * 100;
-          console.log(`Upload progress: ${progress.toFixed(1)}%`);
+          console.log(`GCS Upload progress: ${progress.toFixed(1)}%`);
+          this.onProgress?.({
+            totalPhotos: 1,
+            uploadedPhotos: 0,
+            failedPhotos: 0,
+            currentPhoto: progress
+          });
         }
       });
 
       xhr.addEventListener('load', () => {
         try {
           if (xhr.status === 200 || xhr.status === 201) {
-            const response = JSON.parse(xhr.responseText);
             resolve({
               success: true,
-              photoId: response.photoId,
-              gcsPath: response.gcsPath,
-              sequenceNumber: parseInt(formData.get('sequenceNumber') as string),
+              photoId: presignedData.photoId,
+              gcsPath: presignedData.gcsPath,
+              sequenceNumber: presignedData.uploadInfo.sequenceNumber,
             });
           } else {
-            const errorResponse = xhr.responseText ? JSON.parse(xhr.responseText) : {};
             resolve({
               success: false,
-              error: errorResponse.message || `Upload failed with status: ${xhr.status}`,
-              sequenceNumber: parseInt(formData.get('sequenceNumber') as string),
+              error: `GCS upload failed with status: ${xhr.status}`,
+              sequenceNumber: presignedData.uploadInfo.sequenceNumber,
             });
           }
         } catch (error) {
           resolve({
             success: false,
-            error: `Failed to parse response: ${error}`,
-            sequenceNumber: parseInt(formData.get('sequenceNumber') as string),
+            error: `Failed to parse GCS response: ${error}`,
+            sequenceNumber: presignedData.uploadInfo.sequenceNumber,
           });
         }
       });
@@ -140,22 +212,30 @@ class PhotoUploadService {
       xhr.addEventListener('error', () => {
         resolve({
           success: false,
-          error: 'Network error during upload',
-          sequenceNumber: parseInt(formData.get('sequenceNumber') as string),
+          error: 'Network error during GCS upload',
+          sequenceNumber: presignedData.uploadInfo.sequenceNumber,
         });
       });
 
       xhr.addEventListener('timeout', () => {
         resolve({
           success: false,
-          error: 'Upload timeout',
-          sequenceNumber: parseInt(formData.get('sequenceNumber') as string),
+          error: 'GCS upload timeout',
+          sequenceNumber: presignedData.uploadInfo.sequenceNumber,
         });
       });
 
-      xhr.open('POST', `${CONFIG.API_BASE_URL}/upload`);
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      xhr.timeout = 30000; // 30 second timeout
+      // Create FormData for GCS upload
+      const formData = new FormData();
+      formData.append('file', {
+        uri: uri,
+        type: presignedData.contentType,
+        name: presignedData.fileName,
+      } as any);
+
+      xhr.open('PUT', presignedData.presignedUrl);
+      xhr.setRequestHeader('Content-Type', presignedData.contentType);
+      xhr.timeout = 60000; // 60 second timeout for GCS
       xhr.send(formData);
     });
   }

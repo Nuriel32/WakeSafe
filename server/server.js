@@ -162,6 +162,47 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('upload_started', (data = {}) => {
+    safeLog('info', `Photo upload started for user ${socket.userId}: ${data.fileName}`);
+    socket.emit('upload_progress', {
+      photoId: data.photoId,
+      progress: 0,
+      fileName: data.fileName,
+      status: 'uploading'
+    });
+  });
+
+  socket.on('upload_progress', (data = {}) => {
+    const progress = Math.max(0, Math.min(100, data.progress || 0));
+    socket.emit('upload_progress', {
+      photoId: data.photoId,
+      progress,
+      fileName: data.fileName,
+      status: 'uploading'
+    });
+  });
+
+  socket.on('upload_completed', (data = {}) => {
+    safeLog('info', `Photo upload completed for user ${socket.userId}: ${data.fileName}`);
+    socket.emit('upload_completed', {
+      photoId: data.photoId,
+      fileName: data.fileName,
+      gcsPath: data.gcsPath,
+      status: 'completed',
+      aiProcessingQueued: data.aiProcessingQueued || false
+    });
+  });
+
+  socket.on('upload_failed', (data = {}) => {
+    safeLog('error', `Photo upload failed for user ${socket.userId}: ${data.error}`);
+    socket.emit('upload_failed', {
+      photoId: data.photoId,
+      fileName: data.fileName,
+      error: data.error,
+      status: 'failed'
+    });
+  });
+
   socket.on('disconnect', (reason) => {
     safeLog('info', `WebSocket client disconnected: ${socket.userId}, reason: ${reason}`);
   });
@@ -197,6 +238,13 @@ function getFatigueMessage(fatigueLevel, confidence) {
     'unknown': 'Unable to determine driver state'
   };
   return messages[fatigueLevel] || 'Unknown fatigue state';
+}
+
+function broadcastUploadNotification(userId, notification) {
+  io.to(`user:${userId}`).emit('upload_notification', {
+    ...notification,
+    timestamp: Date.now()
+  });
 }
 function broadcastAIProcessingComplete(userId, photoId, results, processingTime) {
   io.to(`user:${userId}`).emit('ai_processing_complete', {

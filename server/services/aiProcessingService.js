@@ -222,7 +222,7 @@ class AIProcessingService {
     }
 
     /**
-     * Update photo with AI results
+     * Update photo with AI results and move file to after-ai folder
      * @param {string} photoId - Photo ID
      * @param {Object} results - AI processing results
      * @param {number} processingTime - Processing time in ms
@@ -230,9 +230,31 @@ class AIProcessingService {
     async updatePhotoWithResults(photoId, results, processingTime) {
         try {
             const Photo = require('../models/PhotoSchema');
+            const { moveFileAfterAI } = require('./gcpStorageService');
+            
+            // Get the photo to access its details
+            const photo = await Photo.findById(photoId);
+            if (!photo) {
+                logger.error(`Photo ${photoId} not found for AI results update`);
+                return;
+            }
+
+            // Move file from before-ai to after-ai folder
+            let newGcsPath = photo.gcsPath;
+            try {
+                newGcsPath = await moveFileAfterAI(photo.gcsPath, photo.userId, photo.sessionId);
+                logger.info(`File moved from ${photo.gcsPath} to ${newGcsPath} after AI processing`);
+            } catch (moveError) {
+                logger.error(`Failed to move file after AI processing: ${moveError.message}`);
+                // Continue with update even if move fails
+            }
+
+            // Update photo with AI results and new path
             await Photo.findByIdAndUpdate(photoId, {
                 prediction: results.fatigueLevel,
                 aiProcessingStatus: 'completed',
+                gcsPath: newGcsPath,
+                folderType: 'after-ai',
                 aiResults: {
                     confidence: results.confidence,
                     ear: results.ear,
@@ -241,6 +263,8 @@ class AIProcessingService {
                     processedAt: results.processedAt
                 }
             });
+
+            logger.info(`Photo ${photoId} updated with AI results and moved to after-ai folder`);
         } catch (error) {
             logger.error(`Error updating photo with AI results: ${error.message}`);
         }

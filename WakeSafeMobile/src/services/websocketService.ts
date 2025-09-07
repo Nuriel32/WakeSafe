@@ -41,6 +41,11 @@ class WebSocketService {
   private onSessionUpdate?: (update: SessionUpdate) => void;
   private onConnectionChange?: (connected: boolean) => void;
   private onError?: (error: string) => void;
+  private onUploadNotification?: (data: any) => void;
+  private onUploadProgress?: (data: any) => void;
+  private onUploadCompleted?: (data: any) => void;
+  private onUploadFailed?: (data: any) => void;
+  private onAIProcessingComplete?: (data: any) => void;
 
   connect(token: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
@@ -123,6 +128,28 @@ class WebSocketService {
 
         this.socket.on('ai_processing_complete', (data) => {
           console.log('AI processing complete:', data);
+          this.onAIProcessingComplete?.(data);
+        });
+
+        // Upload notification handlers
+        this.socket.on('upload_notification', (data) => {
+          console.log('Upload notification:', data);
+          this.onUploadNotification?.(data);
+        });
+
+        this.socket.on('upload_progress', (data) => {
+          console.log('Upload progress:', data);
+          this.onUploadProgress?.(data);
+        });
+
+        this.socket.on('upload_completed', (data) => {
+          console.log('Upload completed:', data);
+          this.onUploadCompleted?.(data);
+        });
+
+        this.socket.on('upload_failed', (data) => {
+          console.log('Upload failed:', data);
+          this.onUploadFailed?.(data);
         });
 
       } catch (error) {
@@ -198,6 +225,26 @@ class WebSocketService {
 
   setOnError(handler: (error: string) => void): void {
     this.onError = handler;
+  }
+
+  setOnUploadNotification(handler: (data: any) => void): void {
+    this.onUploadNotification = handler;
+  }
+
+  setOnUploadProgress(handler: (data: any) => void): void {
+    this.onUploadProgress = handler;
+  }
+
+  setOnUploadCompleted(handler: (data: any) => void): void {
+    this.onUploadCompleted = handler;
+  }
+
+  setOnUploadFailed(handler: (data: any) => void): void {
+    this.onUploadFailed = handler;
+  }
+
+  setOnAIProcessingComplete(handler: (data: any) => void): void {
+    this.onAIProcessingComplete = handler;
   }
 
   // Getters

@@ -143,14 +143,96 @@ async function deleteFile(gcsPath) {
   await bucket.file(gcsPath).delete();
 }
 
-async function generateSignedUrl(gcsPath) {
+async function generateSignedUrl(gcsPath, expiresIn = 3600) {
   const file = bucket.file(gcsPath);
   const [url] = await file.getSignedUrl({
     version: 'v4',
     action: 'read',
-    expires: Date.now() + 1000 * 60 * 60
+    expires: Date.now() + expiresIn * 1000
   });
   return url;
+}
+
+/**
+ * Generate presigned URL for client direct upload
+ * @param {string} userId - User ID
+ * @param {string} sessionId - Session ID
+ * @param {string} fileName - Original file name
+ * @param {Object} metadata - Additional metadata
+ * @param {string} folderType - 'before-ai' or 'after-ai'
+ * @returns {Object} Presigned URL and file information
+ */
+async function generatePresignedUploadUrl(userId, sessionId, fileName, metadata = {}, folderType = 'before-ai') {
+  try {
+    const timestamp = Date.now();
+    const random = crypto.randomBytes(4).toString('hex');
+    const extension = fileName.split('.').pop().toLowerCase();
+    
+    // Ensure only image formats
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+    if (!allowedExtensions.includes(extension)) {
+      throw new Error(`Unsupported file format: ${extension}. Allowed: ${allowedExtensions.join(', ')}`);
+    }
+
+    // Generate smart filename with sequence number
+    const sequenceNumber = metadata.sequenceNumber ? metadata.sequenceNumber.toString().padStart(6, '0') : '000000';
+    const smartName = `${sequenceNumber}_${timestamp}_${random}.${extension}`;
+    const gcsPath = `drivers/${userId}/sessions/${sessionId}/${folderType}/${smartName}`;
+
+    // Generate presigned URL for upload
+    const file = bucket.file(gcsPath);
+    const [presignedUrl] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'write',
+      expires: Date.now() + 3600 * 1000, // 1 hour expiry
+      contentType: `image/${extension === 'jpg' ? 'jpeg' : extension}`
+    });
+
+    return {
+      presignedUrl,
+      gcsPath,
+      fileName: smartName,
+      originalName: fileName,
+      contentType: `image/${extension === 'jpg' ? 'jpeg' : extension}`,
+      metadata: {
+        userId,
+        sessionId,
+        sequenceNumber: metadata.sequenceNumber,
+        captureTimestamp: timestamp,
+        folderType,
+        ...metadata
+      }
+    };
+  } catch (error) {
+    throw new Error(`Failed to generate presigned upload URL: ${error.message}`);
+  }
+}
+
+/**
+ * Move file from before-ai to after-ai folder after AI processing
+ * @param {string} gcsPath - Original GCS path
+ * @param {string} userId - User ID
+ * @param {string} sessionId - Session ID
+ * @returns {string} New GCS path in after-ai folder
+ */
+async function moveFileAfterAI(gcsPath, userId, sessionId) {
+  try {
+    const fileName = gcsPath.split('/').pop();
+    const newPath = `drivers/${userId}/sessions/${sessionId}/after-ai/${fileName}`;
+    
+    const sourceFile = bucket.file(gcsPath);
+    const destinationFile = bucket.file(newPath);
+    
+    // Copy file to new location
+    await sourceFile.copy(destinationFile);
+    
+    // Delete original file
+    await sourceFile.delete();
+    
+    return newPath;
+  } catch (error) {
+    throw new Error(`Failed to move file after AI processing: ${error.message}`);
+  }
 }
 
 async function generateSignedUrls(paths) {
@@ -165,5 +247,7 @@ module.exports = {
   getFileStream,
   deleteFile,
   generateSignedUrl,
-  generateSignedUrls
+  generateSignedUrls,
+  generatePresignedUploadUrl,
+  moveFileAfterAI
 };
