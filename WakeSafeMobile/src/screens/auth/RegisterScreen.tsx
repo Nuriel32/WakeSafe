@@ -94,9 +94,13 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
 
     setLoading(true);
     try {
-      await register(formData);
+      console.log('Starting registration process...');
+      const result = await register(formData);
+      console.log('Registration successful:', result);
+      console.log('Auth state should now be updated');
       // Navigation will be handled by the auth state change
     } catch (error: any) {
+      console.error('Registration failed:', error);
       Alert.alert('Registration Failed', error.message || CONFIG.ERRORS.VALIDATION);
     } finally {
       setLoading(false);

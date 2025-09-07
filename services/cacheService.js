@@ -42,3 +42,30 @@ exports.validateSessionOwner = async (sessionId, userId) => {
     return cachedUserId === userId;
 };
 
+/**
+ * Get active session ID for a user
+ * @returns {String|null} sessionId
+ */
+exports.getActiveSession = async (userId) => {
+    // We need to search for the session key that has this userId as value
+    // This is a simplified approach - in production you might want to use a different pattern
+    const keys = await redis.keys('session:*');
+    for (const key of keys) {
+        const value = await redis.get(key);
+        if (value === userId) {
+            return key.replace('session:', '');
+        }
+    }
+    return null;
+};
+
+/**
+ * Remove active session for a user
+ */
+exports.removeActiveSession = async (userId) => {
+    const sessionId = await exports.getActiveSession(userId);
+    if (sessionId) {
+        await redis.del(`session:${sessionId}`);
+    }
+};
+

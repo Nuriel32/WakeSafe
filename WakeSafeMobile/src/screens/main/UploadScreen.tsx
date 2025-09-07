@@ -32,38 +32,66 @@ export const UploadScreen: React.FC = () => {
   };
 
   const pickImages = async () => {
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    try {
+      console.log('Requesting media library permissions...');
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-      maxWidth: 1920,
-      maxHeight: 1080,
-    });
+      console.log('Launching image library...');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      });
 
-    if (!result.canceled) {
-      const newImages = result.assets.map(asset => asset.uri);
-      setSelectedImages(prev => [...prev, ...newImages]);
+      console.log('Image library result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newImages = result.assets.map(asset => asset.uri);
+        console.log('Images selected:', newImages);
+        setSelectedImages(prev => [...prev, ...newImages]);
+      } else {
+        console.log('Image selection was canceled or no assets returned');
+      }
+    } catch (error) {
+      console.error('Error picking images:', error);
+      Alert.alert('Image Picker Error', 'Failed to pick images. Please try again.');
     }
   };
 
   const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please grant camera permissions to take photos.');
-      return;
-    }
+    try {
+      console.log('Requesting camera permissions...');
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      console.log('Camera permission status:', status);
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant camera permissions to take photos.');
+        return;
+      }
 
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
-      maxWidth: 1920,
-      maxHeight: 1080,
-    });
+      console.log('Launching camera...');
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        allowsEditing: false,
+        exif: false,
+      });
 
-    if (!result.canceled) {
-      setSelectedImages(prev => [...prev, result.assets[0].uri]);
+      console.log('Camera result:', result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        console.log('Photo taken successfully:', result.assets[0].uri);
+        setSelectedImages(prev => [...prev, result.assets[0].uri]);
+      } else {
+        console.log('Camera was canceled or no assets returned');
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Camera Error', 'Failed to take photo. Please try again.');
     }
   };
 

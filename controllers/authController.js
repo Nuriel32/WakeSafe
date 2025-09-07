@@ -8,7 +8,15 @@ const logger = require('../utils/logger');
 
 // פונקציה פנימית ליצירת JWT
 function generateToken(user, jti) {
-  return jwt.sign({ id: user._id, jti }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  return jwt.sign({ 
+    id: user._id, 
+    jti,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone,
+    carNumber: user.carNumber
+  }, process.env.JWT_SECRET, { expiresIn: '1h' });
 }
 
 /**

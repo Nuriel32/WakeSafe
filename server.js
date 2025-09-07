@@ -137,6 +137,31 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('continuous_capture_start', (data = {}) => {
+    safeLog('info', `Continuous photo capture started for user ${socket.userId}, session: ${data.sessionId}`);
+    socket.emit('continuous_capture_started', {
+      sessionId: data.sessionId,
+      captureRate: '1 photo per second',
+      timestamp: Date.now(),
+    });
+  });
+
+  socket.on('continuous_capture_stop', (data = {}) => {
+    safeLog('info', `Continuous photo capture stopped for user ${socket.userId}, session: ${data.sessionId}`);
+    socket.emit('continuous_capture_stopped', {
+      sessionId: data.sessionId,
+      timestamp: Date.now(),
+    });
+  });
+
+  socket.on('photo_captured', (data = {}) => {
+    socket.emit('photo_capture_confirmed', {
+      sequenceNumber: data.sequenceNumber,
+      timestamp: data.timestamp,
+      sessionId: data.sessionId,
+    });
+  });
+
   socket.on('disconnect', (reason) => {
     safeLog('info', `WebSocket client disconnected: ${socket.userId}, reason: ${reason}`);
   });
@@ -147,13 +172,31 @@ io.on('connection', (socket) => {
 });
 
 // ---- Global broadcast helpers ----
-function broadcastFatigueDetection(userId, sessionId, fatigueLevel, confidence) {
+function broadcastFatigueDetection(userId, sessionId, fatigueLevel, confidence, photoId, aiResults) {
   io.to(`user:${userId}`).emit('fatigue_detection', {
     sessionId,
     fatigueLevel,
     confidence,
+    photoId,
+    aiResults,
     timestamp: Date.now(),
+    alert: {
+      type: fatigueLevel,
+      severity: confidence > 0.8 ? 'high' : confidence > 0.6 ? 'medium' : 'low',
+      message: getFatigueMessage(fatigueLevel, confidence),
+      actionRequired: fatigueLevel === 'sleeping' || (fatigueLevel === 'drowsy' && confidence > 0.8)
+    }
   });
+}
+
+function getFatigueMessage(fatigueLevel, confidence) {
+  const messages = {
+    'alert': 'Driver is alert and focused',
+    'drowsy': `Driver appears drowsy (${Math.round(confidence * 100)}% confidence)`,
+    'sleeping': `Driver appears to be sleeping (${Math.round(confidence * 100)}% confidence) - IMMEDIATE ATTENTION REQUIRED`,
+    'unknown': 'Unable to determine driver state'
+  };
+  return messages[fatigueLevel] || 'Unknown fatigue state';
 }
 function broadcastAIProcessingComplete(userId, photoId, results, processingTime) {
   io.to(`user:${userId}`).emit('ai_processing_complete', {
