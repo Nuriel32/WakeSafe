@@ -11,7 +11,8 @@ const {
 const {
     getUnprocessedPhotos,
     updatePhotoAIResults,
-    getSessionPhotos
+    getSessionPhotos,
+    getPhotoStats
 } = require('../controllers/photoController');
 
 /**
@@ -49,5 +50,12 @@ router.delete('/:id', auth, checkTokenRevoked, deletePhotoById);
  * @body { photoIds: [ObjectId, ObjectId, ...] }
  */
 router.delete('/', auth, checkTokenRevoked, deletePhotosInBulk);
+
+/**
+ * @route GET /api/photos/stats
+ * @desc Get photo processing statistics
+ * @access Private (AI Server)
+ */
+router.get('/stats', auth, checkTokenRevoked, getPhotoStats);
 
 module.exports = router;

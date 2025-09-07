@@ -128,18 +128,13 @@ class AIProcessingService {
     async callAIService(item) {
         const axios = require('axios');
         
+        // Format request according to AI server schema
         const requestData = {
-            image_url: item.signedUrl,
-            metadata: {
-                photoId: item.photoId,
-                userId: item.userId,
-                sessionId: item.sessionId,
-                sequenceNumber: item.sequenceNumber,
-                captureTimestamp: item.captureTimestamp
-            }
+            photo_id: item.photoId,
+            gcs_url: item.signedUrl
         };
 
-        const response = await axios.post(this.aiEndpoint, requestData, {
+        const response = await axios.post(`${this.aiEndpoint}/analyze`, requestData, {
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`,
                 'Content-Type': 'application/json'
@@ -190,18 +185,22 @@ class AIProcessingService {
      * @param {Object} response - Response from AI service
      */
     parseAIResponse(response) {
-        // This will be customized based on your AI service response format
+        // Parse response according to AI server schema
+        const details = response.details || {};
+        
         return {
-            fatigueLevel: response.prediction || response.fatigue_level || 'unknown',
-            confidence: response.confidence || response.score || 0.5,
-            ear: response.ear || response.eye_aspect_ratio || null,
-            headPose: response.head_pose || {
-                pitch: response.pitch || 0,
-                yaw: response.yaw || 0,
-                roll: response.roll || 0
+            fatigueLevel: response.prediction || 'unknown',
+            confidence: response.confidence || 0.5,
+            ear: details.ear || null,
+            headPose: details.head_pose || {
+                pitch: 0,
+                yaw: 0,
+                roll: 0
             },
             processingTime: response.processing_time || null,
             processedAt: new Date(),
+            faceDetected: details.face_detected || false,
+            eyesDetected: details.eyes_detected || false,
             rawResponse: response
         };
     }
