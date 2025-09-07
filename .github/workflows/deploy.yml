@@ -93,15 +93,8 @@ jobs:
 
           echo "SERVICE_DEPLOY=$SERVICE_DEPLOY_NORM" >> "$GITHUB_ENV"
           echo "IMAGE_REPO=$IMAGE_REPO_NORM" >> "$GITHUB_ENV"
-          
-          # Debug: Print variables
-          echo "DEBUG: REGION=$REGION"
-          echo "DEBUG: PROJECT_ID=$PROJECT_ID"
-          echo "DEBUG: IMAGE_REPO_NORM=$IMAGE_REPO_NORM"
-          echo "DEBUG: RUN_NUMBER=$RUN_NUMBER"
-          
-          echo "IMAGE_URI=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/$IMAGE_REPO_NORM:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
-          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/$IMAGE_REPO_NORM:latest" >> "$GITHUB_ENV"
+          echo "IMAGE_URI=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
+          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:latest" >> "$GITHUB_ENV"
 
       - name: Sanity check gcloud
         run: |
