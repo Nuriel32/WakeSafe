@@ -1,0 +1,188 @@
+name: Deploy Multi-Service to Google Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai_server/**'
+      - 'apps/**'
+      - 'controllers/**'
+      - 'routes/**'
+      - 'services/**'
+      - 'models/**'
+      - 'middlewares/**'
+      - 'server.js'
+      - 'app.js'
+      - 'package.json'
+  pull_request:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  REGISTRY: ${{ secrets.GCP_REGION }}-docker.pkg.dev
+  REPOSITORY: wakesafe
+
+jobs:
+  # Build and push backend service
+  build-backend:
+    name: Build and Push Backend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Configure Docker for GCR
+      run: gcloud auth configure-docker ${{ env.REGISTRY }}
+
+    - name: Build Backend Docker image
+      run: |
+        docker build -f apps/backend/Dockerfile -t ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-api:${{ github.sha }} .
+        docker tag ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-api:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-api:latest
+
+    - name: Push Backend Docker image
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-api:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-api:latest
+
+    - name: Deploy Backend to Cloud Run
+      run: |
+        gcloud run deploy wakesafe-api \
+          --image ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-api:${{ github.sha }} \
+          --region ${{ env.REGION }} \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 8080 \
+          --memory 2Gi \
+          --cpu 2 \
+          --max-instances 10 \
+          --min-instances 1 \
+          --concurrency 100 \
+          --timeout 300 \
+          --set-env-vars NODE_ENV=production \
+          --set-env-vars PORT=8080
+
+  # Build and push AI server service
+  build-ai-server:
+    name: Build and Push AI Server
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Configure Docker for GCR
+      run: gcloud auth configure-docker ${{ env.REGISTRY }}
+
+    - name: Build AI Server Docker image
+      run: |
+        docker build -f apps/ai-server/Dockerfile -t ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-ai:${{ github.sha }} .
+        docker tag ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-ai:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-ai:latest
+
+    - name: Push AI Server Docker image
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-ai:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-ai:latest
+
+    - name: Deploy AI Server to Cloud Run
+      run: |
+        gcloud run deploy wakesafe-ai \
+          --image ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-ai:${{ github.sha }} \
+          --region ${{ env.REGION }} \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 8000 \
+          --memory 4Gi \
+          --cpu 2 \
+          --max-instances 5 \
+          --min-instances 0 \
+          --concurrency 10 \
+          --timeout 300 \
+          --set-env-vars HOST=0.0.0.0 \
+          --set-env-vars PORT=8000 \
+          --set-env-vars PYTHONPATH=/app
+
+  # Test deployments
+  test-deployments:
+    name: Test Deployments
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-ai-server]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Get Backend Service URL
+      id: backend-url
+      run: |
+        BACKEND_URL=$(gcloud run services describe wakesafe-api --region=${{ env.REGION }} --format="value(status.url)")
+        echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
+        echo "Backend URL: $BACKEND_URL"
+
+    - name: Get AI Server Service URL
+      id: ai-url
+      run: |
+        AI_URL=$(gcloud run services describe wakesafe-ai --region=${{ env.REGION }} --format="value(status.url)")
+        echo "url=$AI_URL" >> $GITHUB_OUTPUT
+        echo "AI Server URL: $AI_URL"
+
+    - name: Test Backend Health
+      run: |
+        curl -f "${{ steps.backend-url.outputs.url }}/healthz" || exit 1
+        echo "✅ Backend health check passed"
+
+    - name: Test AI Server Health
+      run: |
+        curl -f "${{ steps.ai-url.outputs.url }}/health" || exit 1
+        echo "✅ AI Server health check passed"
+
+    - name: Update Mobile App Configuration
+      run: |
+        echo "Backend URL: ${{ steps.backend-url.outputs.url }}"
+        echo "AI Server URL: ${{ steps.ai-url.outputs.url }}"
+        echo "Update your mobile app configuration with these URLs"
+
+  # Cleanup old images (optional)
+  cleanup:
+    name: Cleanup Old Images
+    runs-on: ubuntu-latest
+    needs: [test-deployments]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Clean up old images (keep last 10)
+      run: |
+        # Clean up backend images
+        gcloud artifacts docker images list ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-api --sort-by=CREATE_TIME --limit=10 --format="value(name)" | tail -n +11 | xargs -r gcloud artifacts docker images delete --quiet
+        
+        # Clean up AI server images
+        gcloud artifacts docker images list ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/wakesafe-ai --sort-by=CREATE_TIME --limit=10 --format="value(name)" | tail -n +11 | xargs -r gcloud artifacts docker images delete --quiet
