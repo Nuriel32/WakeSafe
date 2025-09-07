@@ -3,6 +3,10 @@ name: Deploy to Cloud Run
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'server/**'
+      - 'apps/backend/**'
+      - '.github/workflows/deploy.yml'
 
 concurrency:
   group: cloud-run-${{ github.ref_name }}
@@ -104,7 +108,7 @@ jobs:
       - name: Build Docker image
         run: |
           echo "Building image..."
-          docker build -t "${IMAGE_URI}" .
+          docker build -f apps/backend/Dockerfile -t "${IMAGE_URI}" .
           docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
 
       - name: Container smoke test (local)
