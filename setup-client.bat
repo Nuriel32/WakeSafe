@@ -1,4 +1,4 @@
-@echo off
+yy@echo off
 echo 🚀 Setting up WakeSafe Client...
 
 REM Check if Node.js is installed
