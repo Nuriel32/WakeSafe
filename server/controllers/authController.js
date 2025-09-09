@@ -65,8 +65,8 @@ async function register(req, res) {
     const jti = uuidv4();
     const token = generateToken(user, jti);
 
-    await cache.setInCache(`token:${user._id}`, token, 3600);
-    await cache.setInCache(`jti:${user._id}`, jti, 3600);
+    await cache.set(`token:${user._id}`, token, 3600);
+    await cache.set(`jti:${user._id}`, jti, 3600);
 
     logger.info(`User registered successfully: ${email}`);
     res.status(201).json({ token });
@@ -95,8 +95,8 @@ async function login(req, res) {
     const jti = uuidv4();
     const token = generateToken(user, jti);
 
-    await cache.setInCache(`token:${user._id}`, token, 3600);
-    await cache.setInCache(`jti:${user._id}`, jti, 3600);
+    await cache.set(`token:${user._id}`, token, 3600);
+    await cache.set(`jti:${user._id}`, jti, 3600);
 
     logger.info(`From authController: User logged in successfully: ${email}`);
     res.json({ token });
@@ -118,9 +118,9 @@ async function logout(req, res) {
     return res.status(400).json({ message: "Missing token ID" });
   }
 
-  await cache.blacklistToken(jti);
-  await cache.deleteFromCache(`token:${req.user.id}`);
-  await cache.deleteFromCache(`jti:${req.user.id}`);
+  await cache.revokeToken(jti);
+  await cache.del(`token:${req.user.id}`);
+  await cache.del(`jti:${req.user.id}`);
 
   logger.info(`From authController: User ${req.user.id} logged out successfully`);
   res.json({ message: 'Logout successful' });
