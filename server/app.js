@@ -10,7 +10,8 @@ connectDB();
 const app = express();
 
 // Trust proxy for proper IP detection behind load balancers/proxies
-app.set('trust proxy', true);
+app.set('trust proxy', true); // or a number; `true` is simplest for Cloud Run
+
 
 // CORS middleware for mobile app access
 app.use((req, res, next) => {
