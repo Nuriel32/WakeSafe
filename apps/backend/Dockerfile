@@ -8,8 +8,7 @@ RUN apk add --no-cache redis tini python3 make g++ curl
 WORKDIR /app
 
 # Copy package files from server directory
-COPY server/package.json ./
-COPY server/package-lock.json ./
+COPY server/package*.json ./
 
 # Install dependencies
 RUN npm ci --omit=dev
