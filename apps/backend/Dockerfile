@@ -2,7 +2,7 @@
 FROM node:18-alpine AS base
 
 # Install system dependencies
-RUN apk add --no-cache redis tini python3 make g++
+RUN apk add --no-cache redis tini python3 make g++ curl
 
 # Set working directory
 WORKDIR /app

@@ -100,7 +100,7 @@ jobs:
           fi
           
           echo "IMAGE_URI=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
-          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:latest" >> "$GITHUB_ENV"
+          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:latest" >> "$GITHUB_
 
       - name: Sanity check gcloud
         run: |
