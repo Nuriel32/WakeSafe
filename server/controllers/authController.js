@@ -55,7 +55,12 @@ async function register(req, res) {
       carNumber
     });
 
-    await DriverSession.create({ userId: user._id });
+    // Generate a unique session ID
+    const sessionId = `session_${user._id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    await DriverSession.create({ 
+      userId: user._id,
+      sessionId: sessionId
+    });
 
     const jti = uuidv4();
     const token = generateToken(user, jti);
