@@ -1,4 +1,4 @@
-const { uploadFile, generateSignedUrl } = require('../services/gcpStorageService.js');
+const { uploadFile, uploadSessionPhoto, generateSignedUrl } = require('../services/gcpStorageService.js');
 const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const logger = require('../utils/logger');
@@ -42,7 +42,7 @@ async function uploadPhoto(req, res) {
             }
         };
 
-        const { gcsPath, smartName, metadata: fileMetadata } = await uploadFile(file, userId, sessionId, metadata, photoFolderType);
+        const { gcsPath, smartName, metadata: fileMetadata } = await uploadSessionPhoto(file, userId, sessionId, metadata, photoFolderType);
 
         // Create photo document with AI-ready data
         const photo = await Photo.create({
@@ -100,7 +100,7 @@ async function uploadPhoto(req, res) {
  */
 async function getPresignedUrl(req, res) {
     try {
-        const { fileName, sessionId, metadata } = req.body;
+        const { fileName, sessionId, sequenceNumber, timestamp, location, clientMeta } = req.body;
         const userId = req.user.id;
         const session = req.session;
 
@@ -116,26 +116,32 @@ async function getPresignedUrl(req, res) {
             return res.status(400).json({ error: `Unsupported file format: ${extension}` });
         }
 
-        // Generate unique filename
-        const timestamp = Date.now();
+        // Generate unique filename with sequence number
+        const captureTimestamp = timestamp || Date.now();
+        const seqNum = sequenceNumber || 0;
         const random = crypto.randomBytes(4).toString('hex');
-        const smartName = `${timestamp}_${random}.${extension}`;
-        const gcsPath = `drivers/${userId}/sessions/${sessionId}/photos/${smartName}`;
+        const smartName = `photo_${seqNum.toString().padStart(6, '0')}_${captureTimestamp}_${random}.${extension}`;
+        
+        // Create organized folder structure: drivers/{userId}/sessions/{sessionId}/photos/before-ai/
+        const gcsPath = `drivers/${userId}/sessions/${sessionId}/photos/before-ai/${smartName}`;
 
-        // Generate presigned URL
-        const presignedUrl = await generateSignedUrl(gcsPath);
+        // Generate presigned URL for upload
+        const presignedUrl = await generatePresignedUploadUrl(gcsPath, `image/${extension}`, 60);
 
         // Create photo document with pending status
         const photo = await Photo.create({
             sessionId,
             userId,
-            gcsPath,
+            gcsPath: `gs://${process.env.GCS_BUCKET}/${gcsPath}`,
             name: smartName,
-            location: metadata?.location || null,
-            clientMeta: metadata?.clientMeta || null,
+            location: location || null,
+            clientMeta: clientMeta || null,
+            sequenceNumber: seqNum,
+            captureTimestamp: captureTimestamp,
+            folderType: 'before-ai',
             prediction: 'pending',
             aiProcessingStatus: 'pending',
-            uploadStatus: 'pending' // New field to track upload status
+            uploadStatus: 'pending'
         });
 
         // Update session statistics
@@ -148,18 +154,78 @@ async function getPresignedUrl(req, res) {
         res.json({
             presignedUrl,
             photoId: photo._id,
-            gcsPath,
+            gcsPath: `gs://${process.env.GCS_BUCKET}/${gcsPath}`,
             fileName: smartName,
+            contentType: `image/${extension}`,
+            uploadInfo: {
+                sequenceNumber: seqNum,
+                captureTimestamp: captureTimestamp,
+                folderType: 'before-ai'
+            },
             expiresIn: 3600 // 1 hour
         });
 
     } catch (err) {
+        console.error('Presigned URL generation error:', err);
         logger.error(`From UploadController: Presigned URL generation failed for user ${req.user?.id}: ${err.message}`);
         res.status(500).json({ error: 'Failed to generate presigned URL' });
     }
 }
 
+async function confirmUpload(req, res) {
+    try {
+        const { photoId, uploadSuccess } = req.body;
+        const userId = req.user.id;
+
+        if (!photoId) {
+            return res.status(400).json({ error: 'Missing photoId' });
+        }
+
+        // Find the photo and update its status
+        const photo = await Photo.findOne({ _id: photoId, userId });
+        if (!photo) {
+            return res.status(404).json({ error: 'Photo not found' });
+        }
+
+        if (uploadSuccess) {
+            photo.uploadStatus = 'completed';
+            
+            // Generate signed URL for AI processing
+            const signedUrl = await generateSignedUrl(photo.gcsPath, 3600);
+            
+            // Queue photo for AI processing
+            aiProcessingService.queuePhotoForProcessing(photo, signedUrl);
+            
+            logger.info(`From UploadController: Upload confirmed for photo ${photoId}, AI processing queued`);
+            
+            res.json({
+                message: 'Upload confirmed successfully',
+                photoId: photo._id,
+                aiProcessingQueued: true,
+                processingStatus: 'pending'
+            });
+        } else {
+            photo.uploadStatus = 'failed';
+            logger.warn(`From UploadController: Upload failed for photo ${photoId}`);
+            
+            res.json({
+                message: 'Upload failure recorded',
+                photoId: photo._id,
+                aiProcessingQueued: false
+            });
+        }
+
+        await photo.save();
+
+    } catch (err) {
+        console.error('Confirm upload error:', err);
+        logger.error(`From UploadController: Upload confirmation failed for user ${req.user?.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to confirm upload' });
+    }
+}
+
 module.exports = {
     uploadPhoto,
-    getPresignedUrl
+    getPresignedUrl,
+    confirmUpload
 };

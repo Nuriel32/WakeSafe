@@ -44,6 +44,61 @@ async function uploadFile(filePath, destinationPath, metadata = {}) {
   }
 }
 
+// Enhanced upload function for continuous photo capture
+async function uploadSessionPhoto(file, userId, sessionId, metadata = {}, folderType = 'before-ai') {
+  try {
+    checkGCSAvailability();
+    
+    // Generate unique filename with timestamp and sequence number
+    const timestamp = Date.now();
+    const sequenceNumber = metadata.sequenceNumber || 0;
+    const random = require('crypto').randomBytes(4).toString('hex');
+    const extension = file.originalname?.split('.').pop() || 'jpg';
+    const smartName = `photo_${sequenceNumber.toString().padStart(6, '0')}_${timestamp}_${random}.${extension}`;
+    
+    // Create organized folder structure: drivers/{userId}/sessions/{sessionId}/photos/{folderType}/
+    const gcsPath = `drivers/${userId}/sessions/${sessionId}/photos/${folderType}/${smartName}`;
+    
+    const fileObj = bucket.file(gcsPath);
+    
+    // Upload file buffer
+    await fileObj.upload(file.buffer, {
+      metadata: {
+        contentType: file.mimetype,
+        cacheControl: 'public, max-age=31536000',
+        metadata: {
+          userId: userId,
+          sessionId: sessionId,
+          sequenceNumber: sequenceNumber.toString(),
+          captureTimestamp: metadata.captureTimestamp?.toString() || timestamp.toString(),
+          folderType: folderType,
+          location: metadata.location ? JSON.stringify(metadata.location) : null,
+          clientMeta: metadata.clientMeta ? JSON.stringify(metadata.clientMeta) : null,
+          processingStatus: 'pending',
+          uploadedAt: new Date().toISOString(),
+        }
+      },
+    });
+    
+    logger.info(`Session photo uploaded to GCS: ${gcsPath} (sequence: ${sequenceNumber})`);
+    
+    return {
+      gcsPath: `gs://${process.env.GCS_BUCKET}/${gcsPath}`,
+      smartName,
+      metadata: {
+        ...metadata,
+        gcsPath: `gs://${process.env.GCS_BUCKET}/${gcsPath}`,
+        uploadedAt: new Date().toISOString(),
+        fileSize: file.size,
+        contentType: file.mimetype
+      }
+    };
+  } catch (error) {
+    logger.error('Session photo upload failed:', error);
+    throw error;
+  }
+}
+
 async function deleteFile(gcsPath) {
   try {
     checkGCSAvailability();
@@ -164,6 +219,7 @@ async function updatePhotoProcessingStatus(gcsPath, status, results = {}) {
 
 module.exports = {
   uploadFile,
+  uploadSessionPhoto,
   deleteFile,
   generatePresignedUploadUrl,
   generateSignedUrl,
