@@ -1,6 +1,6 @@
-const DriverSession = require('../models/DriverSession');
-const googleMapService = require('../services/googleMapService');
-const logger = require('../utils/logger');
+const DriverSession = require('./models/DriverSession');
+const googleMapService = require('./services/googleMapService');
+const logger = require('./utils/logger');
 
 /**
  * @route POST /api/location/navigate
