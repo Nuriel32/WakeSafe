@@ -25,9 +25,11 @@ function generateToken(user, jti) {
  * @access Public
  */
 async function register(req, res) {
+  console.log('Register endpoint called with body:', req.body);
   const { firstName, lastName, email, password, phone, carNumber } = req.body;
 
   if (!firstName || !lastName || !email || !password || !phone || !carNumber) {
+    console.log('Missing required fields');
     return res.status(400).json({ message: 'Missing required fields' });
   }
 
@@ -64,6 +66,7 @@ async function register(req, res) {
     logger.info(`User registered successfully: ${email}`);
     res.status(201).json({ token });
   } catch (error) {
+    console.error('Registration error:', error);
     logger.error(`Registration failed for email ${email}: ${error.message}`);
     res.status(400).json({ message: 'Registration failed, email might already exist' });
   }
