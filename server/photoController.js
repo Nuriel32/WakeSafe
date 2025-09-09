@@ -1,7 +1,7 @@
-const Photo = require('../models/PhotoSchema');
-const DriverSession = require('../models/DriverSession');
-const { deleteFile, getUnprocessedPhotos: getGCSUnprocessedPhotos, updatePhotoProcessingStatus } = require('../services/gcpStorageService');
-const logger = require('../utils/logger');
+const Photo = require('./models/PhotoSchema');
+const DriverSession = require('./models/DriverSession');
+const { deleteFile, getUnprocessedPhotos: getGCSUnprocessedPhotos, updatePhotoProcessingStatus } = require('./services/gcpStorageService');
+const logger = require('./utils/logger');
 
 /**
  * Internal logic: deletes a single photo from GCS, MongoDB, and session reference.

@@ -1,8 +1,8 @@
-const { uploadImage, deleteFileFromGCP } = require('../services/gcpStorageService');
-const FatigueLog = require('../models/FatigueLog');
-const DriverSession = require('../models/DriverSession');
-const fatigueService = require('../services/fatigueService');
-const logger = require('../utils/logger');
+const { uploadImage, deleteFileFromGCP } = require('./services/gcpStorageService');
+const FatigueLog = require('./models/FatigueLog');
+const DriverSession = require('./models/DriverSession');
+const fatigueService = require('./services/fatigueService');
+const logger = require('./utils/logger');
 
 exports.detectFatigue = async (req, res) => {
   try {

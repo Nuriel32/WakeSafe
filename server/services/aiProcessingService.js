@@ -1,5 +1,4 @@
 const logger = require('../utils/logger');
-const { broadcastFatigueDetection, broadcastAIProcessingComplete } = require('../server.js');
 
 /**
  * AI Processing Service
@@ -99,18 +98,22 @@ class AIProcessingService {
             await this.updatePhotoWithResults(item.photoId, aiResults, processingTime);
 
             // Broadcast results via WebSocket
-            broadcastAIProcessingComplete(item.userId, item.photoId, aiResults, processingTime);
+            if (global.broadcastAIProcessingComplete) {
+                global.broadcastAIProcessingComplete(item.userId, item.photoId, aiResults, processingTime);
+            }
 
             // Check if fatigue detection requires alert
             if (aiResults.fatigueLevel !== 'alert' && aiResults.confidence > 0.6) {
-                broadcastFatigueDetection(
-                    item.userId,
-                    item.sessionId,
-                    aiResults.fatigueLevel,
-                    aiResults.confidence,
-                    item.photoId,
-                    aiResults
-                );
+                if (global.broadcastFatigueDetection) {
+                    global.broadcastFatigueDetection(
+                        item.userId,
+                        item.sessionId,
+                        aiResults.fatigueLevel,
+                        aiResults.confidence,
+                        item.photoId,
+                        aiResults
+                    );
+                }
             }
 
             logger.info(`Photo ${item.photoId} processed successfully in ${processingTime}ms`);

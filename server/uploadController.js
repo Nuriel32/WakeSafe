@@ -1,9 +1,9 @@
-const { uploadFile, generateSignedUrl } = require('../services/gcpStorageService.js');
-const Photo = require('../models/PhotoSchema');
-const DriverSession = require('../models/DriverSession');
-const logger = require('../utils/logger');
+const { uploadFile, generateSignedUrl } = require('./services/gcpStorageService.js');
+const Photo = require('./models/PhotoSchema');
+const DriverSession = require('./models/DriverSession');
+const logger = require('./utils/logger');
 const crypto = require('crypto');
-const aiProcessingService = require('../services/aiProcessingService');
+const aiProcessingService = require('./services/aiProcessingService');
 
 /**
  * Handles photo upload from the client with enhanced metadata for AI processing

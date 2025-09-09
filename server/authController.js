@@ -1,10 +1,10 @@
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
-const cache = require('../services/cacheService');
-const User = require('../models/Users');
-const DriverSession = require('../models/DriverSession');
-const logger = require('../utils/logger');
+const cache = require('./services/cacheService');
+const User = require('./models/Users');
+const DriverSession = require('./models/DriverSession');
+const logger = require('./utils/logger');
 
 // פונקציה פנימית ליצירת JWT
 function generateToken(user, jti) {

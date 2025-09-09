@@ -1,7 +1,7 @@
-const Trip = require('../models/DriverSession');
-const ImageLog = require('../models/ImageLog');
-const { uploadImage, deleteFileFromGCP } = require('../services/gcpStorageService');
-const logger = require('../utils/logger');
+const Trip = require('./models/DriverSession');
+const ImageLog = require('./models/ImageLog');
+const { uploadImage, deleteFileFromGCP } = require('./services/gcpStorageService');
+const logger = require('./utils/logger');
 
 /**
  * @route   POST /api/trips
