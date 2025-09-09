@@ -9,6 +9,9 @@ connectDB();
 
 const app = express();
 
+// Trust proxy for proper IP detection behind load balancers/proxies
+app.set('trust proxy', true);
+
 // CORS middleware for mobile app access
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
