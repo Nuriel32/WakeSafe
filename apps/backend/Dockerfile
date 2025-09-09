@@ -11,8 +11,30 @@ WORKDIR /app
 COPY server/package.json ./
 COPY server/package-lock.json ./
 
-# Install dependencies
-RUN npm ci --omit=dev
+# Install dependencies with retry logic and registry configuration
+RUN npm cache clean --force && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-timeout 300000 && \
+    sh -c 'for i in 1 2 3; do \
+      echo "Attempt $i: Installing dependencies..." && \
+      npm ci --omit=dev && break || \
+      (echo "Attempt $i failed, trying alternative registry..." && \
+       npm config set registry https://registry.npmmirror.com/ && \
+       npm ci --omit=dev && break) || \
+      (echo "Alternative registry failed, retrying with original..." && \
+       npm config set registry https://registry.npmjs.org/ && \
+       sleep 10); \
+    done' || \
+    (echo "All attempts failed, trying with npm install instead..." && \
+     npm install --omit=dev) || \
+    (echo "Final fallback: using yarn..." && \
+     npm install -g yarn && \
+     yarn install --production) || \
+    (echo "Ultimate fallback: using pnpm..." && \
+     npm install -g pnpm && \
+     pnpm install --prod)
 
 # Copy server application code
 COPY server/ ./
