@@ -1,296 +1,142 @@
 const logger = require('../utils/logger');
 
-/**
- * AI Processing Service
- * Handles communication with external AI service for fatigue detection
- * 
- * This service is designed to work with your AI endpoint when provided.
- * For now, it includes the structure and mock processing capabilities.
- */
+// AI Processing Service for WakeSafe
+// This service handles communication with the AI server for fatigue detection
 
-class AIProcessingService {
-    constructor() {
-        this.processingQueue = [];
-        this.isProcessing = false;
-        this.aiEndpoint = process.env.AI_ENDPOINT || null;
-        this.apiKey = process.env.AI_API_KEY || null;
+const AI_SERVER_URL = process.env.AI_SERVER_URL || 'http://localhost:8081';
+
+async function processPhotoForFatigue(photoData, sessionId, userId) {
+  try {
+    logger.info(`Processing photo for fatigue detection: session ${sessionId}, user ${userId}`);
+    
+    // Prepare the request payload
+    const payload = {
+      image_data: photoData,
+      session_id: sessionId,
+      user_id: userId,
+      timestamp: new Date().toISOString(),
+    };
+    
+    // Make request to AI server
+    const response = await fetch(`${AI_SERVER_URL}/api/process-photo`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`AI server responded with status: ${response.status}`);
     }
-
-    /**
-     * Add photo to AI processing queue
-     * @param {Object} photo - Photo document from MongoDB
-     * @param {string} signedUrl - GCS signed URL for the photo
-     */
-    async queuePhotoForProcessing(photo, signedUrl) {
-        try {
-            const processingItem = {
-                photoId: photo._id,
-                userId: photo.userId,
-                sessionId: photo.sessionId,
-                gcsPath: photo.gcsPath,
-                signedUrl,
-                sequenceNumber: photo.sequenceNumber,
-                captureTimestamp: photo.captureTimestamp,
-                queuedAt: Date.now()
-            };
-
-            this.processingQueue.push(processingItem);
-            logger.info(`Photo ${photo._id} queued for AI processing. Queue size: ${this.processingQueue.length}`);
-
-            // Start processing if not already running
-            if (!this.isProcessing) {
-                this.processQueue();
-            }
-
-            return true;
-        } catch (error) {
-            logger.error(`Error queuing photo for AI processing: ${error.message}`);
-            return false;
-        }
+    
+    const results = await response.json();
+    
+    // Broadcast results if fatigue is detected
+    if (results.fatigue_detected && global.broadcastFatigueDetection) {
+      global.broadcastFatigueDetection(
+        userId,
+        sessionId,
+        results.fatigue_level,
+        results.confidence,
+        results.photo_id,
+        results
+      );
     }
-
-    /**
-     * Process the AI processing queue
-     */
-    async processQueue() {
-        if (this.isProcessing || this.processingQueue.length === 0) {
-            return;
-        }
-
-        this.isProcessing = true;
-        logger.info(`Starting AI processing queue. Items: ${this.processingQueue.length}`);
-
-        while (this.processingQueue.length > 0) {
-            const item = this.processingQueue.shift();
-            await this.processPhoto(item);
-        }
-
-        this.isProcessing = false;
-        logger.info('AI processing queue completed');
+    
+    // Broadcast processing completion
+    if (global.broadcastAIProcessingComplete) {
+      global.broadcastAIProcessingComplete(
+        userId,
+        results.photo_id,
+        results,
+        results.processing_time
+      );
     }
-
-    /**
-     * Process a single photo with AI service
-     * @param {Object} item - Processing item from queue
-     */
-    async processPhoto(item) {
-        const startTime = Date.now();
-        
-        try {
-            logger.info(`Processing photo ${item.photoId} with AI service`);
-
-            // Update photo status to processing
-            await this.updatePhotoStatus(item.photoId, 'processing');
-
-            let aiResults;
-            
-            if (this.aiEndpoint && this.apiKey) {
-                // Call actual AI service
-                aiResults = await this.callAIService(item);
-            } else {
-                // Mock processing for development
-                aiResults = await this.mockAIProcessing(item);
-            }
-
-            const processingTime = Date.now() - startTime;
-
-            // Update photo with AI results
-            await this.updatePhotoWithResults(item.photoId, aiResults, processingTime);
-
-            // Broadcast results via WebSocket
-            if (global.broadcastAIProcessingComplete) {
-                global.broadcastAIProcessingComplete(item.userId, item.photoId, aiResults, processingTime);
-            }
-
-            // Check if fatigue detection requires alert
-            if (aiResults.fatigueLevel !== 'alert' && aiResults.confidence > 0.6) {
-                if (global.broadcastFatigueDetection) {
-                    global.broadcastFatigueDetection(
-                        item.userId,
-                        item.sessionId,
-                        aiResults.fatigueLevel,
-                        aiResults.confidence,
-                        item.photoId,
-                        aiResults
-                    );
-                }
-            }
-
-            logger.info(`Photo ${item.photoId} processed successfully in ${processingTime}ms`);
-
-        } catch (error) {
-            logger.error(`Error processing photo ${item.photoId}: ${error.message}`);
-            await this.updatePhotoStatus(item.photoId, 'failed');
-        }
+    
+    logger.info(`AI processing completed for photo: ${results.photo_id}`);
+    return results;
+    
+  } catch (error) {
+    logger.error('AI processing failed:', error);
+    
+    // Broadcast error notification
+    if (global.sendNotificationToUser) {
+      global.sendNotificationToUser(
+        userId,
+        'AI processing failed. Please try again.',
+        'error',
+        5000
+      );
     }
-
-    /**
-     * Call actual AI service (when endpoint is provided)
-     * @param {Object} item - Processing item
-     */
-    async callAIService(item) {
-        const axios = require('axios');
-        
-        // Format request according to AI server schema
-        const requestData = {
-            photo_id: item.photoId,
-            gcs_url: item.signedUrl
-        };
-
-        const response = await axios.post(`${this.aiEndpoint}/analyze`, requestData, {
-            headers: {
-                'Authorization': `Bearer ${this.apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 30000 // 30 second timeout
-        });
-
-        return this.parseAIResponse(response.data);
-    }
-
-    /**
-     * Mock AI processing for development/testing
-     * @param {Object} item - Processing item
-     */
-    async mockAIProcessing(item) {
-        // Simulate processing delay
-        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-
-        // Mock results based on sequence number (for testing)
-        const mockResults = [
-            { fatigueLevel: 'alert', confidence: 0.95 },
-            { fatigueLevel: 'alert', confidence: 0.88 },
-            { fatigueLevel: 'drowsy', confidence: 0.72 },
-            { fatigueLevel: 'alert', confidence: 0.91 },
-            { fatigueLevel: 'sleeping', confidence: 0.85 }, // Every 5th photo shows fatigue
-        ];
-
-        const resultIndex = item.sequenceNumber % mockResults.length;
-        const baseResult = mockResults[resultIndex];
-
-        return {
-            fatigueLevel: baseResult.fatigueLevel,
-            confidence: baseResult.confidence + (Math.random() - 0.5) * 0.1, // Add some variance
-            ear: 0.25 + Math.random() * 0.1, // Eye Aspect Ratio
-            headPose: {
-                pitch: (Math.random() - 0.5) * 20,
-                yaw: (Math.random() - 0.5) * 30,
-                roll: (Math.random() - 0.5) * 10
-            },
-            processingTime: 1000 + Math.random() * 2000,
-            processedAt: new Date(),
-            mockData: true // Flag to indicate this is mock data
-        };
-    }
-
-    /**
-     * Parse AI service response
-     * @param {Object} response - Response from AI service
-     */
-    parseAIResponse(response) {
-        // Parse response according to AI server schema
-        const details = response.details || {};
-        
-        return {
-            fatigueLevel: response.prediction || 'unknown',
-            confidence: response.confidence || 0.5,
-            ear: details.ear || null,
-            headPose: details.head_pose || {
-                pitch: 0,
-                yaw: 0,
-                roll: 0
-            },
-            processingTime: response.processing_time || null,
-            processedAt: new Date(),
-            faceDetected: details.face_detected || false,
-            eyesDetected: details.eyes_detected || false,
-            rawResponse: response
-        };
-    }
-
-    /**
-     * Update photo processing status
-     * @param {string} photoId - Photo ID
-     * @param {string} status - Processing status
-     */
-    async updatePhotoStatus(photoId, status) {
-        try {
-            const Photo = require('../models/PhotoSchema');
-            await Photo.findByIdAndUpdate(photoId, {
-                aiProcessingStatus: status
-            });
-        } catch (error) {
-            logger.error(`Error updating photo status: ${error.message}`);
-        }
-    }
-
-    /**
-     * Update photo with AI results and move file to after-ai folder
-     * @param {string} photoId - Photo ID
-     * @param {Object} results - AI processing results
-     * @param {number} processingTime - Processing time in ms
-     */
-    async updatePhotoWithResults(photoId, results, processingTime) {
-        try {
-            const Photo = require('../models/PhotoSchema');
-            const { moveFileAfterAI } = require('./gcpStorageService');
-            
-            // Get the photo to access its details
-            const photo = await Photo.findById(photoId);
-            if (!photo) {
-                logger.error(`Photo ${photoId} not found for AI results update`);
-                return;
-            }
-
-            // Move file from before-ai to after-ai folder
-            let newGcsPath = photo.gcsPath;
-            try {
-                newGcsPath = await moveFileAfterAI(photo.gcsPath, photo.userId, photo.sessionId);
-                logger.info(`File moved from ${photo.gcsPath} to ${newGcsPath} after AI processing`);
-            } catch (moveError) {
-                logger.error(`Failed to move file after AI processing: ${moveError.message}`);
-                // Continue with update even if move fails
-            }
-
-            // Update photo with AI results and new path
-            await Photo.findByIdAndUpdate(photoId, {
-                prediction: results.fatigueLevel,
-                aiProcessingStatus: 'completed',
-                gcsPath: newGcsPath,
-                folderType: 'after-ai',
-                aiResults: {
-                    confidence: results.confidence,
-                    ear: results.ear,
-                    headPose: results.headPose,
-                    processingTime: processingTime,
-                    processedAt: results.processedAt
-                }
-            });
-
-            logger.info(`Photo ${photoId} updated with AI results and moved to after-ai folder`);
-        } catch (error) {
-            logger.error(`Error updating photo with AI results: ${error.message}`);
-        }
-    }
-
-    /**
-     * Get processing queue status
-     */
-    getQueueStatus() {
-        return {
-            queueSize: this.processingQueue.length,
-            isProcessing: this.isProcessing,
-            hasAIEndpoint: !!this.aiEndpoint
-        };
-    }
-
-    /**
-     * Clear processing queue
-     */
-    clearQueue() {
-        this.processingQueue = [];
-        logger.info('AI processing queue cleared');
-    }
+    
+    throw error;
+  }
 }
 
-module.exports = new AIProcessingService();
+async function processBatchPhotos(photos, sessionId, userId) {
+  try {
+    logger.info(`Processing batch of ${photos.length} photos for session ${sessionId}`);
+    
+    const results = [];
+    
+    for (const photo of photos) {
+      try {
+        const result = await processPhotoForFatigue(photo, sessionId, userId);
+        results.push(result);
+        
+        // Add small delay between requests to avoid overwhelming the AI server
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        logger.error(`Failed to process photo in batch: ${error.message}`);
+        results.push({
+          error: error.message,
+          photo_id: photo.id || 'unknown',
+        });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    logger.error('Batch photo processing failed:', error);
+    throw error;
+  }
+}
+
+async function getAIProcessingStatus(photoId) {
+  try {
+    const response = await fetch(`${AI_SERVER_URL}/api/status/${photoId}`, {
+      method: 'GET',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`AI server responded with status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    logger.error('Failed to get AI processing status:', error);
+    throw error;
+  }
+}
+
+async function healthCheck() {
+  try {
+    const response = await fetch(`${AI_SERVER_URL}/health`, {
+      method: 'GET',
+      timeout: 5000,
+    });
+    
+    return response.ok;
+  } catch (error) {
+    logger.error('AI server health check failed:', error);
+    return false;
+  }
+}
+
+module.exports = {
+  processPhotoForFatigue,
+  processBatchPhotos,
+  getAIProcessingStatus,
+  healthCheck,
+};

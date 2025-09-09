@@ -6,14 +6,14 @@ const checkTokenRevoked = require('../middlewares/checkTokenRevoked');
 const {
     deletePhotoById,
     deletePhotosInBulk
-} = require('../photoAPIController');
+} = require('../controllers/photoAPIController');
 
 const {
     getUnprocessedPhotos,
     updatePhotoAIResults,
     getSessionPhotos,
     getPhotoStats
-} = require('../photoController');
+} = require('../controllers/photoController');
 
 /**
  * @route GET /api/photos/unprocessed

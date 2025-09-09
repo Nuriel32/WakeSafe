@@ -1,5 +1,5 @@
-const User = require('./models/Users');
-const logger = require('./utils/logger');
+const User = require('../models/Users');
+const logger = require('../utils/logger');
 
 async function getCurrentUser(req, res) {
   try {
