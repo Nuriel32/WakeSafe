@@ -6,15 +6,30 @@ const path = require('path');
 
 const bucketName = process.env.GCS_BUCKET;
 
-if (!bucketName) {
-  throw new Error(' GCS_BUCKET environment variable is missing.');
+// Initialize storage only if bucket name is available
+let storage = null;
+if (bucketName) {
+  try {
+    storage = new Storage({
+      keyFilename: path.join(__dirname, '../config/gcp-key.json'),
+    });
+  } catch (error) {
+    console.warn('GCP Storage initialization failed:', error.message);
+  }
 }
 
-const storage = new Storage({
-  keyFilename: path.join(__dirname, '../config/gcp-key.json'),
-});
+// Initialize bucket only if storage is available
+let bucket = null;
+if (storage && bucketName) {
+  bucket = storage.bucket(bucketName);
+}
 
-const bucket = storage.bucket(bucketName);
+// Helper function to check if GCS is available
+function checkGCSAvailability() {
+  if (!storage || !bucket) {
+    throw new Error('GCS_BUCKET environment variable is missing or GCP Storage is not initialized');
+  }
+}
 
 /**
  * Upload a photo buffer to GCS with optimized structure for AI analysis:
@@ -28,6 +43,8 @@ const bucket = storage.bucket(bucketName);
  * @returns {Object} Upload result with paths and metadata
  */
 async function uploadFile(file, userId, sessionId, metadata = {}, folderType = 'before-ai') {
+  checkGCSAvailability();
+  
   const timestamp = metadata.captureTimestamp || Date.now();
   const random = crypto.randomBytes(4).toString('hex');
   const extension = file.originalname.split('.').pop().toLowerCase();
@@ -83,6 +100,8 @@ async function uploadFile(file, userId, sessionId, metadata = {}, folderType = '
  * @returns {Array} Array of photo objects with GCS paths
  */
 async function getSessionPhotos(userId, sessionId) {
+  checkGCSAvailability();
+  
   const prefix = `drivers/${userId}/sessions/${sessionId}/photos/`;
   const [files] = await bucket.getFiles({ prefix });
   
@@ -101,6 +120,8 @@ async function getSessionPhotos(userId, sessionId) {
  * @returns {Array} Array of unprocessed photos
  */
 async function getUnprocessedPhotos(status = 'pending') {
+  checkGCSAvailability();
+  
   const [files] = await bucket.getFiles({ prefix: 'drivers/' });
   
   return files
@@ -163,6 +184,8 @@ async function generateSignedUrl(gcsPath, expiresIn = 3600) {
  * @returns {Object} Presigned URL and file information
  */
 async function generatePresignedUploadUrl(userId, sessionId, fileName, metadata = {}, folderType = 'before-ai') {
+  checkGCSAvailability();
+  
   try {
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString('hex');
