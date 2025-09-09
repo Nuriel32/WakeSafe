@@ -1,66 +1,42 @@
-# Multi-stage build for WakeSafe Backend API
-FROM node:18-alpine AS base
+# --- WakeSafe Backend API (single-stage, slim, reliable) ---
+  FROM node:18-alpine
 
-# Install system dependencies
-RUN apk add --no-cache redis tini python3 make g++ curl
-
-# Set working directory
-WORKDIR /app
-
-# Copy package files from server directory
-COPY server/package.json ./
-COPY server/package-lock.json ./
-
-# Install dependencies with retry logic and registry configuration
-RUN npm cache clean --force && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 5 && \
-    npm config set fetch-timeout 300000 && \
-    sh -c 'for i in 1 2 3; do \
-      echo "Attempt $i: Installing dependencies..." && \
-      npm ci --omit=dev && break || \
-      (echo "Attempt $i failed, trying alternative registry..." && \
-       npm config set registry https://registry.npmmirror.com/ && \
-       npm ci --omit=dev && break) || \
-      (echo "Alternative registry failed, retrying with original..." && \
-       npm config set registry https://registry.npmjs.org/ && \
-       sleep 10); \
-    done' || \
-    (echo "All attempts failed, trying with npm install instead..." && \
-     npm install --omit=dev) || \
-    (echo "Final fallback: using yarn..." && \
-     npm install -g yarn && \
-     yarn install --production) || \
-    (echo "Ultimate fallback: using pnpm..." && \
-     npm install -g pnpm && \
-     pnpm install --prod)
-
-# Copy server application code
-COPY server/ ./
-
-# Set environment variables
-ENV NODE_ENV=production
-ENV PORT=8080
-ENV REDIS_HOST=127.0.0.1
-ENV REDIS_PORT=6379
-
-# Expose port
-EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/healthz || exit 1
-
-# Use tini as init system
-ENTRYPOINT ["tini", "-g", "--"]
-
-# Start redis, wait for it, then start the app
-# NOTE: running as root here to avoid permission issues for redis-server.
-CMD ["sh", "-lc", "\
-  redis-server --port ${REDIS_PORT:-6379} --bind 127.0.0.1 --save '' --appendonly no & \
-  for i in 1 2 3 4 5 6 7 8 9 10; do \
-    redis-cli -h 127.0.0.1 -p ${REDIS_PORT:-6379} ping >/dev/null 2>&1 && break || sleep 0.5; \
-  done; \
-  node server.js \
-"]
+  # System deps (redis, tini for PID1, curl for healthcheck)
+  RUN apk add --no-cache redis tini python3 make g++ curl
+  
+  # Workdir
+  WORKDIR /app
+  
+  # Install prod deps first (better layer caching)
+  COPY server/package.json server/package-lock.json ./
+  RUN npm ci --omit=dev || npm install --omit=dev
+  
+  # Copy full server code into /app/server
+  COPY server/ ./server/
+  
+  # Environment
+  ENV NODE_ENV=production \
+      PORT=8080 \
+      HOST=0.0.0.0 \
+      REDIS_HOST=127.0.0.1 \
+      REDIS_PORT=6379
+  
+  # Expose HTTP
+  EXPOSE 8080
+  
+  # Healthcheck (give the app a little time to boot)
+  HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8080/healthz || exit 1
+  
+  # Tini as init
+  ENTRYPOINT ["tini", "-g", "--"]
+  
+  # Start Redis (no persistence), wait for it, then start the app
+  CMD ["sh", "-lc", "\
+    redis-server --port ${REDIS_PORT:-6379} --bind 127.0.0.1 --save '' --appendonly no & \
+    for i in 1 2 3 4 5 6 7 8 9 10; do \
+      redis-cli -h 127.0.0.1 -p ${REDIS_PORT:-6379} ping >/dev/null 2>&1 && break || sleep 0.5; \
+    done; \
+    node server/app.js \
+  "]
+  
