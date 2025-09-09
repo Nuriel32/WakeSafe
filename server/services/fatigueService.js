@@ -12,7 +12,7 @@ exports.processFatigue = async ({ userId, sessionId, image, ear, headPose }) => 
     const imageUrl = await uploadImage(image, filename);
 
     const fatigued = ear < 0.2 || Math.abs(headPose.pitch) > 15;
-console.log(fatigued);
+    console.log(fatigued);
     const log = await FatigueLog.create({
         userId,
         sessionId,

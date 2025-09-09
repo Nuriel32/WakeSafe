@@ -1,6 +1,5 @@
 // server.js
 // Non-blocking startup for Cloud Run: start HTTP immediately, init Mongo/Redis in background.
-// Avoid heavy requires at top-level that might block or throw before listen().
 
 const http = require('http');
 const app = require('./app');
@@ -10,7 +9,7 @@ const logger = require('./utils/logger');
 
 // ---- Config ----
 const PORT = Number(process.env.PORT) || 8080;
-const HOST = '0.0.0.0';
+const HOST = process.env.HOST || '0.0.0.0';
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const CORS_ORIGIN = process.env.SOCKET_IO_ORIGIN || '*';
 
@@ -24,8 +23,8 @@ app.get('/readyz', (_req, res) => res.status(200).send('ready'));
 
 // ---- HTTP server + Socket.IO ----
 const server = http.createServer(app);
-server.keepAliveTimeout = 65000;
-server.headersTimeout = 66000;
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
 
 const io = new Server(server, {
   cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] },
@@ -38,10 +37,7 @@ let isTokenRevoked = async (_jti) => false;
 // ---- Socket.IO auth middleware ----
 io.use(async (socket, next) => {
   try {
-    const token =
-      socket.handshake.auth?.token ||
-      socket.handshake.query?.token;
-
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (!token) return next(new Error('Authentication token required'));
     if (!JWT_SECRET) return next(new Error('Server JWT secret not configured'));
 
@@ -168,7 +164,7 @@ io.on('connection', (socket) => {
       photoId: data.photoId,
       progress: 0,
       fileName: data.fileName,
-      status: 'uploading'
+      status: 'uploading',
     });
   });
 
@@ -178,7 +174,7 @@ io.on('connection', (socket) => {
       photoId: data.photoId,
       progress,
       fileName: data.fileName,
-      status: 'uploading'
+      status: 'uploading',
     });
   });
 
@@ -189,7 +185,7 @@ io.on('connection', (socket) => {
       fileName: data.fileName,
       gcsPath: data.gcsPath,
       status: 'completed',
-      aiProcessingQueued: data.aiProcessingQueued || false
+      aiProcessingQueued: data.aiProcessingQueued || false,
     });
   });
 
@@ -199,7 +195,7 @@ io.on('connection', (socket) => {
       photoId: data.photoId,
       fileName: data.fileName,
       error: data.error,
-      status: 'failed'
+      status: 'failed',
     });
   });
 
@@ -225,27 +221,21 @@ function broadcastFatigueDetection(userId, sessionId, fatigueLevel, confidence, 
       type: fatigueLevel,
       severity: confidence > 0.8 ? 'high' : confidence > 0.6 ? 'medium' : 'low',
       message: getFatigueMessage(fatigueLevel, confidence),
-      actionRequired: fatigueLevel === 'sleeping' || (fatigueLevel === 'drowsy' && confidence > 0.8)
-    }
+      actionRequired: fatigueLevel === 'sleeping' || (fatigueLevel === 'drowsy' && confidence > 0.8),
+    },
   });
 }
 
 function getFatigueMessage(fatigueLevel, confidence) {
   const messages = {
-    'alert': 'Driver is alert and focused',
-    'drowsy': `Driver appears drowsy (${Math.round(confidence * 100)}% confidence)`,
-    'sleeping': `Driver appears to be sleeping (${Math.round(confidence * 100)}% confidence) - IMMEDIATE ATTENTION REQUIRED`,
-    'unknown': 'Unable to determine driver state'
+    alert: 'Driver is alert and focused',
+    drowsy: `Driver appears drowsy (${Math.round(confidence * 100)}% confidence)`,
+    sleeping: `Driver appears to be sleeping (${Math.round(confidence * 100)}% confidence) - IMMEDIATE ATTENTION REQUIRED`,
+    unknown: 'Unable to determine driver state',
   };
   return messages[fatigueLevel] || 'Unknown fatigue state';
 }
 
-function broadcastUploadNotification(userId, notification) {
-  io.to(`user:${userId}`).emit('upload_notification', {
-    ...notification,
-    timestamp: Date.now()
-  });
-}
 function broadcastAIProcessingComplete(userId, photoId, results, processingTime) {
   io.to(`user:${userId}`).emit('ai_processing_complete', {
     photoId,
@@ -254,6 +244,7 @@ function broadcastAIProcessingComplete(userId, photoId, results, processingTime)
     timestamp: Date.now(),
   });
 }
+
 function sendNotificationToUser(userId, message, type = 'info', duration = 5000) {
   io.to(`user:${userId}`).emit('notification', {
     message,
@@ -262,16 +253,11 @@ function sendNotificationToUser(userId, message, type = 'info', duration = 5000)
     timestamp: Date.now(),
   });
 }
+
+// Also make them globally available if other modules expect that
 global.broadcastFatigueDetection = broadcastFatigueDetection;
 global.broadcastAIProcessingComplete = broadcastAIProcessingComplete;
 global.sendNotificationToUser = sendNotificationToUser;
-
-// Export functions for other modules to use
-module.exports = {
-  broadcastFatigueDetection,
-  broadcastAIProcessingComplete,
-  sendNotificationToUser
-};
 
 // ---- Start server immediately; init dependencies in background ----
 server.listen(PORT, HOST, () => {
@@ -305,9 +291,11 @@ async function connectMongo() {
     return;
   }
   try {
-    // Require mongoose only here to avoid heavy top-level require
     const mongoose = require('mongoose');
-    await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+    await mongoose.connect(uri, {
+      dbName: process.env.MONGO_DB,
+      serverSelectionTimeoutMS: 5000,
+    });
     safeLog('info', 'Mongo connected');
   } catch (err) {
     safeLog('error', `Mongo connect failed (continuing): ${err.message}`);
@@ -317,7 +305,6 @@ async function connectMongo() {
 let redisClient;
 async function connectRedis() {
   try {
-    // Require redis only here to avoid blocking top-level import
     const { createClient } = require('redis');
     redisClient = createClient({ socket: { host: REDIS_HOST, port: REDIS_PORT } });
     redisClient.on('error', (err) => safeLog('error', `Redis error: ${err.message}`));
@@ -328,6 +315,10 @@ async function connectRedis() {
     safeLog('error', `Redis connect failed (continuing): ${err.message}`);
   }
 }
+
+// ---- Global process error handlers (log-only; never exit on smoke) ----
+process.on('unhandledRejection', (r) => safeLog('error', `unhandledRejection: ${r}`));
+process.on('uncaughtException', (e) => safeLog('error', `uncaughtException: ${e?.message || e}`));
 
 // ---- Graceful shutdown ----
 function shutdown(signal) {
@@ -361,4 +352,11 @@ function safeLog(level, msg) {
   }
 }
 
-module.exports = { server, io };
+// ---- Combined exports (avoid overwrite) ----
+module.exports = {
+  server,
+  io,
+  broadcastFatigueDetection,
+  broadcastAIProcessingComplete,
+  sendNotificationToUser,
+};

@@ -37,6 +37,6 @@
     for i in 1 2 3 4 5 6 7 8 9 10; do \
       redis-cli -h 127.0.0.1 -p ${REDIS_PORT:-6379} ping >/dev/null 2>&1 && break || sleep 0.5; \
     done; \
-    node server/app.js \
+    node server/server.js \
   "]
   

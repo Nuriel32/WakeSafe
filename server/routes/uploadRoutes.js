@@ -7,7 +7,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const auth = require('../middlewares/auth');
 const checkTokenRevoked = require('../middlewares/checkTokenRevoked');
 const validateSessionViaCache = require('../middlewares/validateSessionViaCache');
-const { uploadPhoto, getPresignedUrl } = require('../uploadController');
+const { uploadPhoto, getPresignedUrl } = require('../controllers/uploadController');
 
 /**
  * @route POST /api/upload

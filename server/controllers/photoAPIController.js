@@ -1,5 +1,5 @@
 const { deleteSinglePhoto, deleteMultiplePhotos } = require('./photoController');
-const logger = require('./utils/logger');
+const logger = require('../utils/logger');
 
 /**
  * Express controller: DELETE /api/photos/:id

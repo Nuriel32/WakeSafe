@@ -1,276 +1,173 @@
-require('dotenv').config();
-
 const { Storage } = require('@google-cloud/storage');
-const crypto = require('crypto');
-const path = require('path');
+const logger = require('../utils/logger');
 
-const bucketName = process.env.GCS_BUCKET;
-
-// Initialize storage only if bucket name is available
+// Lazy initialization to avoid errors when GCS_BUCKET is not set
 let storage = null;
-if (bucketName) {
-  try {
-    storage = new Storage({
-      keyFilename: path.join(__dirname, '../config/gcp-key.json'),
-    });
-  } catch (error) {
-    console.warn('GCP Storage initialization failed:', error.message);
-  }
-}
-
-// Initialize bucket only if storage is available
 let bucket = null;
-if (storage && bucketName) {
-  bucket = storage.bucket(bucketName);
-}
 
-// Helper function to check if GCS is available
 function checkGCSAvailability() {
-  if (!storage || !bucket) {
-    throw new Error('GCS_BUCKET environment variable is missing or GCP Storage is not initialized');
+  if (!process.env.GCS_BUCKET) {
+    throw new Error('GCS_BUCKET environment variable is not set. GCS operations are disabled.');
   }
-}
-
-/**
- * Upload a photo buffer to GCS with optimized structure for AI analysis:
- * Structure: drivers/{userId}/sessions/{sessionId}/{folderType}/{timestamp}_{random}.{ext}
- * 
- * @param {Object} file - Multer file object
- * @param {string} userId - Driver's user ID
- * @param {string} sessionId - Active session ID
- * @param {Object} metadata - Additional metadata for AI processing
- * @param {string} folderType - 'before-ai' or 'after-ai'
- * @returns {Object} Upload result with paths and metadata
- */
-async function uploadFile(file, userId, sessionId, metadata = {}, folderType = 'before-ai') {
-  checkGCSAvailability();
   
-  const timestamp = metadata.captureTimestamp || Date.now();
-  const random = crypto.randomBytes(4).toString('hex');
-  const extension = file.originalname.split('.').pop().toLowerCase();
-  
-  // Ensure only image formats
-  const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
-  if (!allowedExtensions.includes(extension)) {
-    throw new Error(`Unsupported file format: ${extension}. Allowed: ${allowedExtensions.join(', ')}`);
-  }
-
-  // Optimized naming for AI processing with sequence number
-  const sequenceNumber = metadata.sequenceNumber ? metadata.sequenceNumber.toString().padStart(6, '0') : '000000';
-  const smartName = `${sequenceNumber}_${timestamp}_${random}.${extension}`;
-  const gcsPath = `drivers/${userId}/sessions/${sessionId}/${folderType}/${smartName}`;
-
-  const blob = bucket.file(gcsPath);
-  
-  // Set metadata for AI processing
-  const fileMetadata = {
-    contentType: `image/${extension === 'jpg' ? 'jpeg' : extension}`,
-    metadata: {
-      userId,
-      sessionId,
-      timestamp: timestamp.toString(),
-      uploadTime: new Date().toISOString(),
-      originalName: file.originalname,
-      fileSize: file.size.toString(),
-      ...metadata
+  if (!storage) {
+    try {
+      storage = new Storage();
+      bucket = storage.bucket(process.env.GCS_BUCKET);
+      logger.info('GCS Storage initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize GCS Storage:', error);
+      throw error;
     }
-  };
-
-  const blobStream = blob.createWriteStream({ 
-    resumable: false,
-    metadata: fileMetadata
-  });
-
-  return new Promise((resolve, reject) => {
-    blobStream.on('finish', () => {
-      resolve({
-        gcsPath,
-        smartName,
-        publicUrl: `https://storage.googleapis.com/${bucket.name}/${blob.name}`,
-        metadata: fileMetadata.metadata
-      });
-    }).on('error', reject).end(file.buffer);
-  });
+  }
+  
+  return { storage, bucket };
 }
 
-/**
- * Get all photos for a specific session (for AI processing)
- * @param {string} userId - Driver's user ID
- * @param {string} sessionId - Session ID
- * @returns {Array} Array of photo objects with GCS paths
- */
-async function getSessionPhotos(userId, sessionId) {
-  checkGCSAvailability();
-  
-  const prefix = `drivers/${userId}/sessions/${sessionId}/photos/`;
-  const [files] = await bucket.getFiles({ prefix });
-  
-  return files.map(file => ({
-    name: file.name,
-    gcsPath: file.name,
-    metadata: file.metadata,
-    size: file.metadata.size,
-    uploadedAt: file.metadata.uploadTime
-  }));
-}
-
-/**
- * Get all unprocessed photos for AI analysis
- * @param {string} status - Filter by processing status
- * @returns {Array} Array of unprocessed photos
- */
-async function getUnprocessedPhotos(status = 'pending') {
-  checkGCSAvailability();
-  
-  const [files] = await bucket.getFiles({ prefix: 'drivers/' });
-  
-  return files
-    .filter(file => file.metadata?.processingStatus === status)
-    .map(file => ({
-      name: file.name,
-      gcsPath: file.name,
-      userId: file.metadata.userId,
-      sessionId: file.metadata.sessionId,
-      metadata: file.metadata
-    }));
-}
-
-/**
- * Update photo processing status for AI tracking
- * @param {string} gcsPath - GCS file path
- * @param {string} status - Processing status
- * @param {Object} aiResults - AI analysis results
- */
-async function updatePhotoProcessingStatus(gcsPath, status, aiResults = {}) {
-  const file = bucket.file(gcsPath);
-  const [metadata] = await file.getMetadata();
-  
-  metadata.metadata = {
-    ...metadata.metadata,
-    processingStatus: status,
-    processedAt: new Date().toISOString(),
-    aiResults: JSON.stringify(aiResults)
-  };
-  
-  await file.setMetadata(metadata);
-}
-
-async function getFileStream(gcsPath) {
-  const file = bucket.file(gcsPath);
-  return file.createReadStream();
+async function uploadFile(filePath, destinationPath, metadata = {}) {
+  try {
+    checkGCSAvailability();
+    
+    const file = bucket.file(destinationPath);
+    await file.upload(filePath, {
+      metadata: {
+        ...metadata,
+        cacheControl: 'public, max-age=31536000',
+      },
+    });
+    
+    logger.info(`File uploaded to GCS: ${destinationPath}`);
+    return `gs://${process.env.GCS_BUCKET}/${destinationPath}`;
+  } catch (error) {
+    logger.error('GCS upload failed:', error);
+    throw error;
+  }
 }
 
 async function deleteFile(gcsPath) {
-  await bucket.file(gcsPath).delete();
-}
-
-async function generateSignedUrl(gcsPath, expiresIn = 3600) {
-  const file = bucket.file(gcsPath);
-  const [url] = await file.getSignedUrl({
-    version: 'v4',
-    action: 'read',
-    expires: Date.now() + expiresIn * 1000
-  });
-  return url;
-}
-
-/**
- * Generate presigned URL for client direct upload
- * @param {string} userId - User ID
- * @param {string} sessionId - Session ID
- * @param {string} fileName - Original file name
- * @param {Object} metadata - Additional metadata
- * @param {string} folderType - 'before-ai' or 'after-ai'
- * @returns {Object} Presigned URL and file information
- */
-async function generatePresignedUploadUrl(userId, sessionId, fileName, metadata = {}, folderType = 'before-ai') {
-  checkGCSAvailability();
-  
   try {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(4).toString('hex');
-    const extension = fileName.split('.').pop().toLowerCase();
+    checkGCSAvailability();
     
-    // Ensure only image formats
-    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
-    if (!allowedExtensions.includes(extension)) {
-      throw new Error(`Unsupported file format: ${extension}. Allowed: ${allowedExtensions.join(', ')}`);
-    }
+    const fileName = gcsPath.replace(`gs://${process.env.GCS_BUCKET}/`, '');
+    const file = bucket.file(fileName);
+    await file.delete();
+    
+    logger.info(`File deleted from GCS: ${fileName}`);
+    return true;
+  } catch (error) {
+    logger.error('GCS delete failed:', error);
+    throw error;
+  }
+}
 
-    // Generate smart filename with sequence number
-    const sequenceNumber = metadata.sequenceNumber ? metadata.sequenceNumber.toString().padStart(6, '0') : '000000';
-    const smartName = `${sequenceNumber}_${timestamp}_${random}.${extension}`;
-    const gcsPath = `drivers/${userId}/sessions/${sessionId}/${folderType}/${smartName}`;
-
-    // Generate presigned URL for upload
-    const file = bucket.file(gcsPath);
-    const [presignedUrl] = await file.getSignedUrl({
+async function generatePresignedUploadUrl(fileName, contentType, expiresInMinutes = 60) {
+  try {
+    checkGCSAvailability();
+    
+    const file = bucket.file(fileName);
+    const [url] = await file.getSignedUrl({
       version: 'v4',
       action: 'write',
-      expires: Date.now() + 3600 * 1000, // 1 hour expiry
-      contentType: `image/${extension === 'jpg' ? 'jpeg' : extension}`
+      expires: Date.now() + expiresInMinutes * 60 * 1000,
+      contentType,
     });
-
-    return {
-      presignedUrl,
-      gcsPath,
-      fileName: smartName,
-      originalName: fileName,
-      contentType: `image/${extension === 'jpg' ? 'jpeg' : extension}`,
-      metadata: {
-        userId,
-        sessionId,
-        sequenceNumber: metadata.sequenceNumber,
-        captureTimestamp: timestamp,
-        folderType,
-        ...metadata
-      }
-    };
+    
+    return url;
   } catch (error) {
-    throw new Error(`Failed to generate presigned upload URL: ${error.message}`);
+    logger.error('Failed to generate presigned upload URL:', error);
+    throw error;
   }
 }
 
-/**
- * Move file from before-ai to after-ai folder after AI processing
- * @param {string} gcsPath - Original GCS path
- * @param {string} userId - User ID
- * @param {string} sessionId - Session ID
- * @returns {string} New GCS path in after-ai folder
- */
-async function moveFileAfterAI(gcsPath, userId, sessionId) {
+async function generateSignedUrl(gcsPath, expiresInMinutes = 60) {
   try {
-    const fileName = gcsPath.split('/').pop();
-    const newPath = `drivers/${userId}/sessions/${sessionId}/after-ai/${fileName}`;
+    checkGCSAvailability();
     
-    const sourceFile = bucket.file(gcsPath);
-    const destinationFile = bucket.file(newPath);
+    const fileName = gcsPath.replace(`gs://${process.env.GCS_BUCKET}/`, '');
+    const file = bucket.file(fileName);
+    const [url] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + expiresInMinutes * 60 * 1000,
+    });
     
-    // Copy file to new location
-    await sourceFile.copy(destinationFile);
-    
-    // Delete original file
-    await sourceFile.delete();
-    
-    return newPath;
+    return url;
   } catch (error) {
-    throw new Error(`Failed to move file after AI processing: ${error.message}`);
+    logger.error('Failed to generate signed URL:', error);
+    throw error;
   }
 }
 
-async function generateSignedUrls(paths) {
-  return Promise.all(paths.map(generateSignedUrl));
+async function getSessionPhotos(sessionId) {
+  try {
+    checkGCSAvailability();
+    
+    const [files] = await bucket.getFiles({
+      prefix: `sessions/${sessionId}/`,
+    });
+    
+    return files.map(file => ({
+      name: file.name,
+      gcsPath: `gs://${process.env.GCS_BUCKET}/${file.name}`,
+      size: file.metadata.size,
+      created: file.metadata.timeCreated,
+    }));
+  } catch (error) {
+    logger.error('Failed to get session photos:', error);
+    throw error;
+  }
+}
+
+async function getUnprocessedPhotos() {
+  try {
+    checkGCSAvailability();
+    
+    const [files] = await bucket.getFiles({
+      prefix: 'photos/',
+    });
+    
+    // Filter for unprocessed photos (you might want to add metadata filtering here)
+    return files.map(file => ({
+      name: file.name,
+      gcsPath: `gs://${process.env.GCS_BUCKET}/${file.name}`,
+      size: file.metadata.size,
+      created: file.metadata.timeCreated,
+    }));
+  } catch (error) {
+    logger.error('Failed to get unprocessed photos:', error);
+    throw error;
+  }
+}
+
+async function updatePhotoProcessingStatus(gcsPath, status, results = {}) {
+  try {
+    checkGCSAvailability();
+    
+    const fileName = gcsPath.replace(`gs://${process.env.GCS_BUCKET}/`, '');
+    const file = bucket.file(fileName);
+    
+    await file.setMetadata({
+      metadata: {
+        processingStatus: status,
+        processingResults: JSON.stringify(results),
+        processedAt: new Date().toISOString(),
+      },
+    });
+    
+    logger.info(`Photo processing status updated: ${fileName} -> ${status}`);
+    return true;
+  } catch (error) {
+    logger.error('Failed to update photo processing status:', error);
+    throw error;
+  }
 }
 
 module.exports = {
   uploadFile,
+  deleteFile,
+  generatePresignedUploadUrl,
+  generateSignedUrl,
   getSessionPhotos,
   getUnprocessedPhotos,
   updatePhotoProcessingStatus,
-  getFileStream,
-  deleteFile,
-  generateSignedUrl,
-  generateSignedUrls,
-  generatePresignedUploadUrl,
-  moveFileAfterAI
 };

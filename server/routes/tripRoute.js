@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middlewares/auth');
-const controller = require('../TripController');
+const controller = require('../controllers/TripController');
 
 /**
  * @api {post} /api/trips Create new trip

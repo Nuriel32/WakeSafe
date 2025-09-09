@@ -1,6 +1,6 @@
-const DriverSession = require('./models/DriverSession');
-const cache = require('./services/cacheService');
-const logger = require('./utils/logger');
+const DriverSession = require('../models/DriverSession');
+const cache = require('../services/cacheService');
+const logger = require('../utils/logger');
 
 exports.createSession = async (req, res) => {
   try {
