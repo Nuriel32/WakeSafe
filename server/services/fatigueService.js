@@ -30,6 +30,6 @@ exports.processFatigue = async ({ userId, sessionId, image, ear, headPose }) => 
         }
     });
 
-    await cache.setInCache(cacheKey, log, 1800);
+    await cache.set(cacheKey, log, 1800);
     return log;
 };
