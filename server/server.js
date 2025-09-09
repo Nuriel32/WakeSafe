@@ -266,6 +266,13 @@ global.broadcastFatigueDetection = broadcastFatigueDetection;
 global.broadcastAIProcessingComplete = broadcastAIProcessingComplete;
 global.sendNotificationToUser = sendNotificationToUser;
 
+// Export functions for other modules to use
+module.exports = {
+  broadcastFatigueDetection,
+  broadcastAIProcessingComplete,
+  sendNotificationToUser
+};
+
 // ---- Start server immediately; init dependencies in background ----
 server.listen(PORT, HOST, () => {
   safeLog('info', `HTTP listening on http://${HOST}:${PORT}`);

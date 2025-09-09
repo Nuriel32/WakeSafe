@@ -1,5 +1,5 @@
 const logger = require('../utils/logger');
-const { broadcastFatigueDetection, broadcastAIProcessingComplete } = require('../server');
+const { broadcastFatigueDetection, broadcastAIProcessingComplete } = require('../server.js');
 
 /**
  * AI Processing Service

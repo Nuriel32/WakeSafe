@@ -1,5 +1,5 @@
 # Multi-stage build for WakeSafe AI Server
-FROM python:3.9-slim as base
+FROM python:3.9-slim AS base
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -19,11 +19,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY ai_server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY ai_server/ .
 
 # Create necessary directories
 RUN mkdir -p models logs config
@@ -46,14 +46,14 @@ RUN echo "Placeholder for MobileNet model" > models/fatigue_detection_model.tfli
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV HOST=0.0.0.0
-ENV PORT=8000
+ENV PORT=8081
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8081
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8081/health || exit 1
 
 # Run the application
 CMD ["python", "start.py"]

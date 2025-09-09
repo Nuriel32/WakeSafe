@@ -1,7 +1,7 @@
-const { generatePresignedUploadUrl } = require('../services/gcpStorageService');
-const Photo = require('../models/PhotoSchema');
-const DriverSession = require('../models/DriverSession');
-const logger = require('../utils/logger');
+const { generatePresignedUploadUrl } = require('../../services/gcpStorageService');
+const Photo = require('../../models/PhotoSchema');
+const DriverSession = require('../../models/DriverSession');
+const logger = require('../../utils/logger');
 
 /**
  * Generate presigned URL for direct client upload to GCS
@@ -114,8 +114,8 @@ async function confirmUpload(req, res) {
             await photo.save();
 
             // Trigger AI processing
-            const aiProcessingService = require('../services/aiProcessingService');
-            const signedUrl = await require('../services/gcpStorageService').generateSignedUrl(photo.gcsPath, 3600);
+            const aiProcessingService = require('../../services/aiProcessingService');
+            const signedUrl = await require('../../services/gcpStorageService').generateSignedUrl(photo.gcsPath, 3600);
             await aiProcessingService.queuePhotoForProcessing(photo, signedUrl);
 
             logger.info(`Upload confirmed for photo ${photoId}. AI processing queued.`);
