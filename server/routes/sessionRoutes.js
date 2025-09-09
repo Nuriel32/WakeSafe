@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { createSession, getCurrentSession, endSession, getSessionHistory } = require('../controllers/driverSessionController');
+const { createSession, getCurrentSession, endSession, getSessionHistory } = require('../driverSessionController');
 const auth = require('../middlewares/auth');
 
 // Session management routes

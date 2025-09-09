@@ -115,12 +115,6 @@ jobs:
       - name: Build Docker image
         run: |
           echo "Building image..."
-          echo "Current directory contents:"
-          ls -la
-          echo "Server directory contents:"
-          ls -la server/
-          echo "Checking if package-lock.json exists:"
-          ls -la server/package-lock.json || echo "package-lock.json not found"
           docker build -f apps/backend/Dockerfile -t "${IMAGE_URI}" .
           docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
 
