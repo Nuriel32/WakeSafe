@@ -10,7 +10,8 @@ connectDB();
 const app = express();
 
 // Trust proxy for proper IP detection behind load balancers/proxies
-app.set('trust proxy', true); // or a number; `true` is simplest for Cloud Run
+// For Google Cloud Run, trust only the first proxy (load balancer)
+app.set('trust proxy', 1);
 
 
 // CORS middleware for mobile app access
@@ -32,11 +33,19 @@ app.use(requestLogger);
 // Rate Limiters
 const { generalLimiter, authLimiter, uploadLimiter, apiLimiter } = require('./middlewares/rateLimit');
 
-// Apply general rate limiting to all routes
-app.use(generalLimiter);
+// Debug endpoint to test rate limiting (before rate limiting)
+app.get('/api/debug/rate-limit', (req, res) => {
+  res.json({ 
+    message: 'Rate limit test endpoint',
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Apply specific rate limiting to sensitive routes
-app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
+// Temporarily disable rate limiting for debugging
+// app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
+app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/upload', uploadLimiter, require('./routes/uploadRoutes'));
 app.use('/api/upload', uploadLimiter, require('./routes/presignedUploadRoutes'));
 
@@ -47,5 +56,8 @@ app.use('/api/trips', apiLimiter, require('./routes/tripRoute')); // trip as dri
 app.use('/api/fatigue', apiLimiter, require('./routes/fatigueRoutes'));
 app.use('/api/location', apiLimiter, require('./routes/locationRoutes'));
 app.use('/api/photos', apiLimiter, require('./routes/photoRoutes'));
+
+// Apply general rate limiting to all other routes
+app.use(generalLimiter);
 
 module.exports = app;

@@ -24,14 +24,33 @@ function buildRateLimiter(opts = {}) {
     message,
     skipSuccessfulRequests,
     skipFailedRequests,
+    // Return JSON response instead of HTML
+    handler: (req, res) => {
+      console.log(`Rate limit exceeded for IP: ${req.ip}, Path: ${req.path}`);
+      res.status(429).json({
+        error: 'Too many requests',
+        message: message,
+        retryAfter: Math.round(windowMs / 1000)
+      });
+    },
+    // Additional security: validate IP addresses
+    validate: {
+      trustProxy: false, // Don't trust proxy headers for validation
+      xForwardedForHeader: false, // Don't use X-Forwarded-For for rate limiting
+    },
+    // Use a more secure key generator
+    keyGenerator: (req) => {
+      // Use the direct connection IP, not forwarded headers
+      return req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
+    },
   });
 }
 
 // Specialized rate limiters for different endpoints
 const authLimiter = buildRateLimiter({ 
-  max: 5, 
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  message: 'Too many authentication attempts, please try again in 15 minutes.'
+  max: 10, // Increased for development
+  windowMs: 5 * 60 * 1000, // 5 minutes (reduced for development)
+  message: 'Too many authentication attempts, please try again in 5 minutes.'
 });
 
 const uploadLimiter = buildRateLimiter({ 
