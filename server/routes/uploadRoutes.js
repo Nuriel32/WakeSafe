@@ -7,7 +7,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const auth = require('../middlewares/auth');
 const checkTokenRevoked = require('../middlewares/checkTokenRevoked');
 const validateSessionViaCache = require('../middlewares/validateSessionViaCache');
-const { uploadPhoto, getPresignedUrl } = require('../controllers/uploadController');
+const { uploadPhoto, getPresignedUrl, confirmUpload } = require('../controllers/uploadController');
 
 /**
  * @route POST /api/upload
@@ -34,6 +34,18 @@ router.post(
     checkTokenRevoked,
     validateSessionViaCache,
     getPresignedUrl
+);
+
+/**
+ * @route POST /api/upload/confirm
+ * @desc Confirm upload completion and queue for AI processing
+ * @access Private
+ */
+router.post(
+    '/confirm',
+    auth,
+    checkTokenRevoked,
+    confirmUpload
 );
 
 module.exports = router;
