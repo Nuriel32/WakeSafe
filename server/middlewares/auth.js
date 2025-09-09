@@ -12,7 +12,7 @@ module.exports = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Check if token is blacklisted
-    const isRevoked = await cache.isTokenBlacklisted(decoded.jti);
+    const isRevoked = await cache.isTokenRevoked(decoded.jti);
     if (isRevoked) return res.status(401).json({ message: 'Token revoked' });
 
     req.user = decoded;

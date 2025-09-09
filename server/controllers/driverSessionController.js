@@ -6,14 +6,22 @@ exports.createSession = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const session = await DriverSession.create({ userId });
+    // Generate a unique session ID
+    const sessionId = `session_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const session = await DriverSession.create({ 
+      userId,
+      sessionId: sessionId
+    });
 
-    await cache.setActiveSession(session._id.toString(), userId);
+    // Use existing cache functions
+    await cache.set(`active_session:${userId}`, session._id.toString(), 7200);
 
     logger.info(`From driverSessionController: Cached session in Redis: session:${session._id} -> userId ${userId}`);
 
     res.status(201).json({ sessionId: session._id });
   } catch (error) {
+    console.error('Create session error:', error);
     logger.error('From driverSessionController: Failed to create driver session:', error);
     res.status(500).json({ message: 'Could not create session' });
   }
@@ -24,7 +32,7 @@ exports.getCurrentSession = async (req, res) => {
     const userId = req.user.id;
     
     // Check cache first
-    const activeSessionId = await cache.getActiveSession(userId);
+    const activeSessionId = await cache.get(`active_session:${userId}`);
     
     if (activeSessionId) {
       const session = await DriverSession.findById(activeSessionId);
@@ -38,12 +46,13 @@ exports.getCurrentSession = async (req, res) => {
     
     if (session) {
       // Update cache
-      await cache.setActiveSession(session._id.toString(), userId);
+      await cache.set(`active_session:${userId}`, session._id.toString(), 7200);
       return res.json(session);
     }
     
     res.status(404).json({ message: 'No active session found' });
   } catch (error) {
+    console.error('Get current session error:', error);
     logger.error('From driverSessionController: Failed to get current session:', error);
     res.status(500).json({ message: 'Could not get current session' });
   }
@@ -65,12 +74,13 @@ exports.endSession = async (req, res) => {
     await session.save();
     
     // Remove from cache
-    await cache.removeActiveSession(userId);
+    await cache.del(`active_session:${userId}`);
     
     logger.info(`From driverSessionController: Ended session ${sessionId} for user ${userId}`);
     
     res.json({ message: 'Session ended successfully', session });
   } catch (error) {
+    console.error('End session error:', error);
     logger.error('From driverSessionController: Failed to end session:', error);
     res.status(500).json({ message: 'Could not end session' });
   }

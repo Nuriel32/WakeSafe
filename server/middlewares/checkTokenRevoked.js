@@ -10,7 +10,7 @@ async function checkTokenRevoked(req, res, next) {
         return res.status(401).json({ error: 'Missing token ID' });
     }
 
-    const isBlacklisted = await cache.isTokenBlacklisted(jti);
+    const isBlacklisted = await cache.isTokenRevoked(jti);
     if (isBlacklisted) {
         return res.status(401).json({ error: 'Token has been revoked' });
     }
