@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { detectFatigue, deleteRecentImages } = require('../controllers/fatigueController');
+const { detectFatigue, deleteRecentImages } = require('../fatigueController');
 const auth = require('../middlewares/auth');
 
 router.post('/', auth, detectFatigue);
