@@ -1,19 +1,19 @@
-name: Deploy to Cloud Run
+name: Deploy AI Server to Cloud Run
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'server/**'
-      - 'apps/backend/**'
-      - '.github/workflows/deploy.yml'
+      - 'ai_server/**'
+      - 'apps/ai-server/**'
+      - '.github/workflows/deploy-ai-server.yml'
 
 concurrency:
-  group: cloud-run-${{ github.ref_name }}
+  group: cloud-run-ai-server-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  deploy-ai-server:
     runs-on: ubuntu-latest
 
     env:
@@ -24,19 +24,13 @@ jobs:
       RUN_NUMBER: ${{ github.run_number }}
 
       # Clean names (avoid secrets here to prevent redaction)
-      SERVICE_NAME: wakesafe-api
-      SERVICE_DEPLOY: wakesafe-api
-      IMAGE_REPO_NAME: wakesafe-api
+      SERVICE_NAME: wakesafe-ai-server
+      SERVICE_DEPLOY: wakesafe-ai-server
+      IMAGE_REPO_NAME: wakesafe-ai-server
 
-      # App secrets
-      MONGO_URI: ${{ secrets.MONGO_URI }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-      GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
-
-      # Redis running locally inside the container
-      REDIS_HOST: 127.0.0.1
-      REDIS_PORT: 6379
+      # AI Server secrets
+      AI_SERVER_PORT: 8081
+      # Add other AI server specific secrets here
 
     steps:
       - name: Checkout code
@@ -99,8 +93,8 @@ jobs:
             exit 1
           fi
           
-          echo "IMAGE_URI=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
-          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:latest" >> "$GITHUB_ENV"
+          echo "IMAGE_URI=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-ai-server:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
+          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-ai-server:latest" >> "$GITHUB_ENV"
 
       - name: Sanity check gcloud
         run: |
@@ -114,18 +108,18 @@ jobs:
 
       - name: Build Docker image
         run: |
-          echo "Building image..."
-          docker build -f apps/backend/Dockerfile -t "${IMAGE_URI}" .
+          echo "Building AI server image..."
+          docker build -f ai_server/Dockerfile -t "${IMAGE_URI}" .
           docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
 
       - name: Container smoke test (local)
         run: |
-          ID=$(docker run -d -e PORT=8080 -p 8080:8080 "${IMAGE_URI}")
+          ID=$(docker run -d -e PORT=8081 -p 8081:8081 "${IMAGE_URI}")
           for i in {1..30}; do
-            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break
+            curl -fsS http://localhost:8081/health >/dev/null 2>&1 && break
             sleep 0.5
           done
-          curl -fsS http://localhost:8080/healthz || (echo "Healthcheck failed"; docker logs "$ID"; exit 1)
+          curl -fsS http://localhost:8081/health || (echo "Healthcheck failed"; docker logs "$ID"; exit 1)
           docker rm -f "$ID" >/dev/null 2>&1 || true
 
       - name: Push Docker image to Artifact Registry
@@ -133,12 +127,12 @@ jobs:
           docker push "${IMAGE_URI}"
           docker push "${IMAGE_URI_LATEST}"
 
-      - name: Force service port to 8080 (pre-update)
+      - name: Force service port to 8081 (pre-update)
         run: |
           gcloud run services update "${SERVICE_DEPLOY}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
-            --port 8080 || true
+            --port 8081 || true
 
       - name: Deploy to Cloud Run
         run: |
@@ -148,11 +142,11 @@ jobs:
             --region "${REGION}" \
             --platform managed \
             --allow-unauthenticated \
-            --port 8080 \
-            --set-env-vars "NODE_ENV=production,MONGO_URI=${MONGO_URI},JWT_SECRET=${JWT_SECRET},GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY},GCS_BUCKET=${GCS_BUCKET},REDIS_HOST=${REDIS_HOST},REDIS_PORT=${REDIS_PORT}" \
-            --memory 512Mi \
+            --port 8081 \
+            --set-env-vars "PORT=8081" \
+            --memory 1Gi \
             --cpu 1 \
-            --max-instances 10 \
+            --max-instances 5 \
             --timeout 300 \
             --quiet
 

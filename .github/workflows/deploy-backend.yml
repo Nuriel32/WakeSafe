@@ -1,0 +1,186 @@
+name: Deploy Backend to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'server/**'
+      - 'apps/backend/**'
+      - '.github/workflows/deploy-backend.yml'
+
+concurrency:
+  group: cloud-run-backend-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+
+    env:
+      # Core project settings
+      PROJECT_ID: ${{ secrets.PROJECT_ID }}
+      REGION: ${{ secrets.GCP_REGION }}
+      REPOSITORY: wakesafe
+      RUN_NUMBER: ${{ github.run_number }}
+
+      # Clean names (avoid secrets here to prevent redaction)
+      SERVICE_NAME: wakesafe-api
+      SERVICE_DEPLOY: wakesafe-api
+      IMAGE_REPO_NAME: wakesafe-api
+
+      # App secrets
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+
+      # Redis running locally inside the container
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Google Auth (Service Account JSON)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Validate & normalize names
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${PROJECT_ID:?PROJECT_ID is empty}"
+          : "${REGION:?GCP_REGION is empty}"
+          : "${SERVICE_DEPLOY:?SERVICE_DEPLOY is empty}"
+          : "${IMAGE_REPO_NAME:?IMAGE_REPO_NAME is empty}"
+
+          sanitize_service() {
+            local out
+            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[ _]+/-/g; s/[^a-z0-9-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
+            if ! echo "$out" | grep -qE '^[a-z]'; then out="svc-$out"; fi
+            echo "${out:0:63}"
+          }
+
+          sanitize_image_repo() {
+            local out
+            out="$(echo "$1" | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's|[ _/]+|-|g; s/[^a-z0-9.-]//g; s/-+/-/g; s/^-+//; s/-+$//')"
+            echo "$out"
+          }
+
+          SERVICE_DEPLOY_NORM="$(sanitize_service "$SERVICE_DEPLOY")"
+          IMAGE_REPO_NORM="$(sanitize_image_repo "$IMAGE_REPO_NAME")"
+
+          if ! echo "$SERVICE_DEPLOY_NORM" | grep -Eq '^[a-z]([-a-z0-9]*[a-z0-9])?$'; then
+            echo "CLOUD_RUN_SERVICE invalid after normalization: '$SERVICE_DEPLOY_NORM'"
+            exit 1
+          fi
+          if ! echo "$IMAGE_REPO_NORM" | grep -Eq '^[a-z0-9]+([-.][a-z0-9]+)*$'; then
+            echo "Invalid Docker image repo after normalization: '$IMAGE_REPO_NORM'"
+            exit 1
+          fi
+
+          echo "SERVICE_DEPLOY=$SERVICE_DEPLOY_NORM" >> "$GITHUB_ENV"
+          echo "IMAGE_REPO=$IMAGE_REPO_NORM" >> "$GITHUB_ENV"
+          # Ensure PROJECT_ID is not empty
+          if [ -z "$PROJECT_ID" ]; then
+            echo "ERROR: PROJECT_ID is empty"
+            exit 1
+          fi
+          
+          echo "IMAGE_URI=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
+          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-api:latest" >> "$GITHUB_ENV"
+
+      - name: Sanity check gcloud
+        run: |
+          gcloud config set project "$PROJECT_ID"
+          gcloud auth list
+          gcloud config list
+          gcloud auth print-access-token >/dev/null
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          echo "Building backend image..."
+          docker build -f apps/backend/Dockerfile -t "${IMAGE_URI}" .
+          docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
+
+      - name: Container smoke test (local)
+        run: |
+          ID=$(docker run -d -e PORT=8080 -p 8080:8080 "${IMAGE_URI}")
+          for i in {1..30}; do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          curl -fsS http://localhost:8080/healthz || (echo "Healthcheck failed"; docker logs "$ID"; exit 1)
+          docker rm -f "$ID" >/dev/null 2>&1 || true
+
+      - name: Push Docker image to Artifact Registry
+        run: |
+          docker push "${IMAGE_URI}"
+          docker push "${IMAGE_URI_LATEST}"
+
+      - name: Force service port to 8080 (pre-update)
+        run: |
+          gcloud run services update "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --port 8080 || true
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --image "${IMAGE_URI}" \
+            --region "${REGION}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --set-env-vars "NODE_ENV=production,MONGO_URI=${MONGO_URI},JWT_SECRET=${JWT_SECRET},GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY},GCS_BUCKET=${GCS_BUCKET},REDIS_HOST=${REDIS_HOST},REDIS_PORT=${REDIS_PORT}" \
+            --memory 512Mi \
+            --cpu 1 \
+            --max-instances 10 \
+            --timeout 300 \
+            --quiet
+
+      - name: Verify effective port & URL
+        run: |
+          echo "Service: ${SERVICE_DEPLOY}"
+          gcloud run services describe "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --format='value(spec.template.spec.containers[0].ports[0].containerPort)'
+          gcloud run services describe "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --format='value(status.url)'
+
+      - name: Tail Cloud Run logs on failure
+        if: failure()
+        run: |
+          REV=$(gcloud run services describe "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --format='value(status.latestCreatedRevisionName)' || true)
+          if [ -n "$REV" ]; then
+            echo "==== Logs for revision: $REV ===="
+            gcloud run revisions logs read "$REV" \
+              --project "${PROJECT_ID}" \
+              --region "${REGION}" \
+              --limit=200 || true
+          else
+            echo "No revision found"
+          fi
