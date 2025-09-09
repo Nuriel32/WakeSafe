@@ -1,0 +1,32 @@
+# Essential packages for WakeSafe AI Server
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+requests==2.31.0
+python-dotenv==1.0.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+loguru==0.7.2
+aiofiles==23.2.1
+PyJWT==2.8.0
+httpx==0.25.2
+
+# Database
+pymongo==4.5.0
+motor==3.3.2
+redis==5.0.1
+
+# Image processing
+Pillow==10.0.1
+imutils==0.5.4
+
+# AI/ML (core only)
+numpy==1.24.3
+opencv-python==4.8.1.78
+
+# Google Cloud
+google-cloud-storage==2.10.0
+
+# Monitoring
+psutil==5.9.6
+prometheus-client==0.19.0

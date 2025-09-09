@@ -18,9 +18,49 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# Upgrade pip first
+RUN pip install --upgrade pip
+
+# Copy requirements and install Python dependencies in stages
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install core dependencies first (lighter packages)
+RUN pip install --no-cache-dir \
+    fastapi==0.104.1 \
+    uvicorn==0.24.0 \
+    python-multipart==0.0.6 \
+    requests==2.31.0 \
+    python-dotenv==1.0.0 \
+    pydantic==2.5.0 \
+    pydantic-settings==2.1.0 \
+    loguru==0.7.2 \
+    aiofiles==23.2.1 \
+    PyJWT==2.8.0 \
+    httpx==0.25.2
+
+# Install database dependencies
+RUN pip install --no-cache-dir \
+    pymongo==4.5.0 \
+    motor==3.3.2 \
+    redis==5.0.1
+
+# Install image processing (lighter versions)
+RUN pip install --no-cache-dir \
+    Pillow==10.0.1 \
+    imutils==0.5.4
+
+# Install AI dependencies (heaviest packages last)
+RUN pip install --no-cache-dir \
+    numpy==1.24.3 \
+    opencv-python==4.8.1.78
+
+# Install dlib separately (can be problematic)
+RUN pip install --no-cache-dir dlib==19.24.2 || \
+    pip install --no-cache-dir dlib
+
+# Install TensorFlow (optional, can be heavy)
+RUN pip install --no-cache-dir tensorflow==2.13.0 || \
+    echo "TensorFlow installation failed, continuing without it"
 
 # Copy application code
 COPY . .
