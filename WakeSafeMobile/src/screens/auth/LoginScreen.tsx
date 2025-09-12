@@ -49,9 +49,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
     setLoading(true);
     try {
-      await login(email.trim(), password);
+      console.log('Attempting login for:', email.trim());
+      const result = await login(email.trim(), password);
+      console.log('Login result:', result);
+      console.log('Login completed - waiting for navigation...');
       // Navigation will be handled by the auth state change
     } catch (error: any) {
+      console.error('Login error:', error);
       Alert.alert('Login Failed', error.message || CONFIG.ERRORS.UNAUTHORIZED);
     } finally {
       setLoading(false);
