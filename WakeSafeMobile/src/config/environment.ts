@@ -83,12 +83,8 @@ const environments: Record<Environment, EnvironmentConfig> = {
 
 // Get current environment
 export const getCurrentEnvironment = (): Environment => {
-  if (__DEV__) {
-    return 'development';
-  }
-  // You can add logic here to detect staging vs production
-  // For now, default to production when not in development
-  return 'production';
+  // Force environment: development
+  return 'development';
 };
 
 // Get environment configuration
