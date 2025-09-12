@@ -3,7 +3,17 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const requestLogger = require('./middlewares/requestLogger');
 
-dotenv.config({ path: './env.local' });
+// Load environment variables
+if (process.env.NODE_ENV === 'production') {
+  // In production, load from .env file
+  dotenv.config();
+} else {
+  // In development, try env.local first, then fallback to .env
+  dotenv.config({ path: './env.local' });
+  if (!process.env.MONGO_URI) {
+    dotenv.config();
+  }
+}
 
 connectDB();
 
