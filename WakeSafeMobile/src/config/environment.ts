@@ -1,7 +1,7 @@
 // Environment configuration for WakeSafe Mobile App
 // This file helps manage different environments (local, staging, production)
 
-export type Environment = 'development' | 'staging' | 'production';
+export type Environment = 'development' | 'local' | 'staging' | 'production';
 
 export interface EnvironmentConfig {
   API_BASE_URL: string;
@@ -24,6 +24,20 @@ export interface EnvironmentConfig {
 // Environment configurations
 const environments: Record<Environment, EnvironmentConfig> = {
   development: {
+    API_BASE_URL: 'https://wakesafe-api-227831302277.us-central1.run.app/api',
+    WS_URL: 'https://wakesafe-api-227831302277.us-central1.run.app',
+    DEBUG: true,
+    LOG_LEVEL: 'debug',
+    NODE_ENV: 'development',
+    MAX_FILE_SIZE: 10485760,
+    ALLOWED_FILE_TYPES: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
+    MAX_FILES_PER_UPLOAD: 10,
+    WS_RECONNECT_INTERVAL: 5000,
+    WS_MAX_RECONNECT_ATTEMPTS: 5,
+    NOTIFICATION_DURATION: 5000,
+    SESSION_UPDATE_INTERVAL: 1000,
+  },
+  local: {
     API_BASE_URL: 'http://192.168.1.133:5000/api',
     WS_URL: 'http://192.168.1.133:5000',
     DEBUG: true,

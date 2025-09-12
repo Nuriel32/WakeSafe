@@ -19,7 +19,12 @@
       PORT=8080 \
       HOST=0.0.0.0 \
       REDIS_HOST=127.0.0.1 \
-      REDIS_PORT=6379
+      REDIS_PORT=6379 \
+      MONGO_URI=mongodb+srv://WakeSafeUser:WakeSafeUser123@maincluster.lnewxbu.mongodb.net/?retryWrites=true&w=majority&appName=MainCluster \
+      MONGODB_URI=mongodb+srv://WakeSafeUser:WakeSafeUser123@maincluster.lnewxbu.mongodb.net/?retryWrites=true&w=majority&appName=MainCluster \
+      JWT_SECRET=e \
+      REDIS_URL=redis://127.0.0.1:6379 \
+      SOCKET_IO_ORIGIN=*
   
   # Expose HTTP
   EXPOSE 8080
