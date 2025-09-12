@@ -6,6 +6,7 @@ const app = require('./app');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const logger = require('./utils/logger');
+const connectMongo = require('./config/db');
 
 // ---- Config ----
 const PORT = Number(process.env.PORT) || 8080;
@@ -280,17 +281,39 @@ global.broadcastFatigueDetection = broadcastFatigueDetection;
 global.broadcastAIProcessingComplete = broadcastAIProcessingComplete;
 global.sendNotificationToUser = sendNotificationToUser;
 
-// ---- Start server immediately; init dependencies in background ----
-server.listen(PORT, HOST, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`🌐 HTTP listening on http://${HOST}:${PORT}`);
-  console.log(`🔌 WebSocket listening on ws://${HOST}:${PORT}`);
-  initBackground().catch((err) => console.error(`Background init error: ${err.message}`));
-});
+// ---- Initialize dependencies before starting server ----
+async function startServer() {
+  try {
+    console.log('🔄 Initializing dependencies...');
+    
+    // Connect to MongoDB first (critical dependency)
+    console.log('📊 Connecting to MongoDB...');
+    await connectMongo();
+    console.log('✅ MongoDB connected successfully');
+    
+    // Connect to Redis
+    console.log('🔴 Connecting to Redis...');
+    await connectRedis();
+    console.log('✅ Redis connected successfully');
+    
+    // Start the server only after all dependencies are ready
+    server.listen(PORT, HOST, () => {
+      console.log(`🚀 Server is running on port ${PORT}`);
+      console.log(`🌐 HTTP listening on http://${HOST}:${PORT}`);
+      console.log(`🔌 WebSocket listening on ws://${HOST}:${PORT}`);
+      console.log('✅ All dependencies initialized successfully');
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to initialize dependencies:', error.message);
+    console.error('❌ Server startup aborted');
+    process.exit(1);
+  }
+}
 
 // ---- Background initialization (non-blocking) ----
 async function initBackground() {
-  await Promise.allSettled([connectMongo(), connectRedis()]);
+  // This function is now called after server starts, but dependencies are already connected
   const client = app.locals?.redis;
   if (client) {
     isTokenRevoked = async (jti) => {
@@ -306,23 +329,7 @@ async function initBackground() {
   }
 }
 
-async function connectMongo() {
-  const uri = process.env.MONGO_URI;
-  if (!uri) {
-    console.warn('MONGO_URI is not set; skipping Mongo connection');
-    return;
-  }
-  try {
-    const mongoose = require('mongoose');
-    await mongoose.connect(uri, {
-      dbName: process.env.MONGO_DB,
-      serverSelectionTimeoutMS: 5000,
-    });
-    console.log('✅ MongoDB Connected');
-  } catch (err) {
-    console.error(`Mongo connect failed (continuing): ${err.message}`);
-  }
-}
+// Remove duplicate connectMongo function - using the one from config/db.js
 
 let redisClient;
 async function connectRedis() {
@@ -359,6 +366,12 @@ function shutdown(signal) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// ---- Start the server ----
+startServer().catch((error) => {
+  console.error('❌ Failed to start server:', error.message);
+  process.exit(1);
+});
 
 // ---- Combined exports ----
 module.exports = {
