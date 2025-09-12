@@ -1,6 +1,5 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const connectDB = require('./config/db');
 const requestLogger = require('./middlewares/requestLogger');
 
 // Load environment variables
@@ -14,8 +13,6 @@ if (process.env.NODE_ENV === 'production') {
     dotenv.config();
   }
 }
-
-connectDB();
 
 const app = express();
 
