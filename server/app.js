@@ -3,7 +3,7 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const requestLogger = require('./middlewares/requestLogger');
 
-dotenv.config();
+dotenv.config({ path: './env.local' });
 
 connectDB();
 
@@ -35,9 +35,18 @@ const { generalLimiter, authLimiter, uploadLimiter, apiLimiter } = require('./mi
 
 // Debug endpoint to test rate limiting (before rate limiting)
 app.get('/api/debug/rate-limit', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'Rate limit test endpoint',
     ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// WebSocket test endpoint
+app.get('/api/debug/websocket', (req, res) => {
+  res.json({
+    message: 'WebSocket test endpoint',
+    websocketUrl: `ws://${req.get('host')}/socket.io/`,
     timestamp: new Date().toISOString()
   });
 });

@@ -90,10 +90,26 @@ async function login(req, res) {
     if (!user || !(await user.comparePassword(password))) {
       logger.warn(`From authController: Login attempt failed for email: ${email}`);
       return res.status(401).json({ message: 'Invalid credentials' });
-    }
+    console.log('User found fo  m authController: login:', {
+      id: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      carNumber: user.carNumber
+    });
 
     const jti = uuidv4();
     const token = generateToken(user, jti);
+    
+    console.log('Generated JWT payload:', {
+      id: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      carNumber: user.carNumber
+    });
 
     await cache.set(`token:${user._id}`, token, 3600);
     await cache.set(`jti:${user._id}`, jti, 3600);

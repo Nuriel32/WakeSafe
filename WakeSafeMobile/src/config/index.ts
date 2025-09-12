@@ -1,26 +1,38 @@
 // Configuration for WakeSafe Mobile App
+// Environment-based configuration for local development and production
+
+import { getEnvironmentConfig, isLocalDevelopment } from './environment';
+
+// Get current environment configuration
+const envConfig = getEnvironmentConfig();
+
 export const CONFIG = {
   // API Configuration
-  // Force production server for now to test Cloud Run deployment
-  API_BASE_URL: 'https://wakesafe-api-227831302277.us-central1.run.app/api',
-  WS_URL: 'https://wakesafe-api-227831302277.us-central1.run.app',
+  // Automatically switches between local and production based on environment
+  API_BASE_URL: envConfig.API_BASE_URL,
+  WS_URL: envConfig.WS_URL,
   
   // Storage Keys
   TOKEN_KEY: 'wakesafe_token',
   USER_KEY: 'wakesafe_user',
   
-  // Upload Configuration
-  MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
-  ALLOWED_FILE_TYPES: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
-  MAX_FILES_PER_UPLOAD: 10,
+  // Upload Configuration (from environment variables)
+  MAX_FILE_SIZE: envConfig.MAX_FILE_SIZE,
+  ALLOWED_FILE_TYPES: envConfig.ALLOWED_FILE_TYPES,
+  MAX_FILES_PER_UPLOAD: envConfig.MAX_FILES_PER_UPLOAD,
   
-  // WebSocket Configuration
-  WS_RECONNECT_INTERVAL: 5000,
-  WS_MAX_RECONNECT_ATTEMPTS: 5,
+  // WebSocket Configuration (from environment variables)
+  WS_RECONNECT_INTERVAL: envConfig.WS_RECONNECT_INTERVAL,
+  WS_MAX_RECONNECT_ATTEMPTS: envConfig.WS_MAX_RECONNECT_ATTEMPTS,
   
-  // UI Configuration
-  NOTIFICATION_DURATION: 5000,
-  SESSION_UPDATE_INTERVAL: 1000,
+  // UI Configuration (from environment variables)
+  NOTIFICATION_DURATION: envConfig.NOTIFICATION_DURATION,
+  SESSION_UPDATE_INTERVAL: envConfig.SESSION_UPDATE_INTERVAL,
+  
+  // Development Configuration (from environment variables)
+  DEBUG: envConfig.DEBUG,
+  LOG_LEVEL: envConfig.LOG_LEVEL,
+  NODE_ENV: envConfig.NODE_ENV,
   
   // Validation Rules
   VALIDATION: {

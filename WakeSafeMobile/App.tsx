@@ -97,7 +97,15 @@ const MainNavigator = () => (
 export default function App() {
   const { isAuthenticated, loading, user, token } = useAuth();
 
-  console.log('App render - Auth state:', { isAuthenticated, loading, hasUser: !!user, hasToken: !!token });
+  console.log('App render - Auth state:', { 
+    isAuthenticated, 
+    loading, 
+    hasUser: !!user, 
+    hasToken: !!token,
+    userEmail: user?.email 
+  });
+  
+  console.log('Navigation decision:', isAuthenticated ? 'Main Navigator' : 'Auth Navigator');
 
   if (loading) {
     return (

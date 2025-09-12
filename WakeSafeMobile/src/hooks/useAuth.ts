@@ -52,13 +52,25 @@ export const useAuth = () => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
+      console.log('Making login request to:', `${CONFIG.API_BASE_URL}/auth/login`);
+      
+      // Add timeout and retry logic
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch(`${CONFIG.API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
+      
+      console.log('Login response status:', response.status);
+      console.log('Login response ok:', response.ok);
 
       const data = await response.json();
 
@@ -67,12 +79,17 @@ export const useAuth = () => {
       }
 
       // Decode JWT to get user info
+      console.log('About to decode JWT...');
       const user = decodeJWT(data.token);
+      console.log('JWT decoded successfully, user:', user);
 
       // Store auth data
+      console.log('Storing auth data in AsyncStorage...');
       await AsyncStorage.setItem(CONFIG.TOKEN_KEY, data.token);
       await AsyncStorage.setItem(CONFIG.USER_KEY, JSON.stringify(user));
+      console.log('Auth data stored successfully');
 
+      console.log('Setting auth state...');
       setAuthState({
         isAuthenticated: true,
         user,
@@ -80,6 +97,7 @@ export const useAuth = () => {
         loading: false,
         error: null,
       });
+      console.log('Auth state set successfully');
 
       return data;
     } catch (error: any) {
@@ -171,6 +189,7 @@ export const useAuth = () => {
 
   const decodeJWT = (token: string): User => {
     try {
+      console.log('Decoding JWT token...');
       const base64Url = token.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
@@ -180,8 +199,11 @@ export const useAuth = () => {
           .join('')
       );
 
+      console.log('JWT payload:', jsonPayload);
       const decoded = JSON.parse(jsonPayload);
-      return {
+      console.log('Decoded JWT:', decoded);
+      
+      const user = {
         id: decoded.id,
         firstName: decoded.firstName || 'User',
         lastName: decoded.lastName || '',
@@ -191,6 +213,9 @@ export const useAuth = () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      
+      console.log('Created user object:', user);
+      return user;
     } catch (error) {
       console.error('JWT decode error:', error);
       throw new Error('Invalid token');
