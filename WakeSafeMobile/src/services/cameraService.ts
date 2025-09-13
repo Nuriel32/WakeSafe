@@ -1,133 +1,210 @@
-import * as ImagePicker from 'expo-image-picker';
-import { CONFIG } from '../config';
+import { Camera } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { Alert } from 'react-native';
 
 export interface PhotoCaptureResult {
-  success: boolean;
-  uri?: string;
-  error?: string;
-  timestamp: number;
-}
-
-export interface SessionPhotoData {
   uri: string;
+  width: number;
+  height: number;
   timestamp: number;
-  sessionId: string;
-  userId: string;
   sequenceNumber: number;
 }
 
+export interface CameraServiceConfig {
+  quality: number;
+  intervalMs: number;
+  maxWidth: number;
+  maxHeight: number;
+}
+
 class CameraService {
+  private cameraRef: Camera | null = null;
   private isCapturing = false;
   private captureInterval: NodeJS.Timeout | null = null;
   private sequenceNumber = 0;
-  private onPhotoCaptured?: (photo: SessionPhotoData) => void;
+  private config: CameraServiceConfig = {
+    quality: 0.8,
+    intervalMs: 1000, // 1 second
+    maxWidth: 1920,
+    maxHeight: 1080,
+  };
+
+  // Callbacks
+  private onPhotoCaptured?: (photo: PhotoCaptureResult) => void;
   private onError?: (error: string) => void;
+  private onStatusChange?: (isCapturing: boolean) => void;
 
-  async requestCameraPermissions(): Promise<boolean> {
+  setCameraRef(ref: Camera | null) {
+    console.log('CameraService: Setting camera ref:', ref);
+    this.cameraRef = ref;
+  }
+
+  setConfig(config: Partial<CameraServiceConfig>) {
+    this.config = { ...this.config, ...config };
+  }
+
+  setCallbacks(callbacks: {
+    onPhotoCaptured?: (photo: PhotoCaptureResult) => void;
+    onError?: (error: string) => void;
+    onStatusChange?: (isCapturing: boolean) => void;
+  }) {
+    this.onPhotoCaptured = callbacks.onPhotoCaptured;
+    this.onError = callbacks.onError;
+    this.onStatusChange = callbacks.onStatusChange;
+  }
+
+  async requestPermissions(): Promise<boolean> {
     try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      return status === 'granted';
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Camera Permission Required',
+          'Please grant camera permissions to start the session and capture photos for fatigue detection.'
+        );
+        return false;
+      }
+      return true;
     } catch (error) {
-      console.error('Error requesting camera permissions:', error);
+      console.error('Camera permission error:', error);
+      this.onError?.('Failed to request camera permissions');
       return false;
     }
   }
 
-  async startContinuousCapture(
-    sessionId: string,
-    userId: string,
-    onPhotoCaptured: (photo: SessionPhotoData) => void,
-    onError: (error: string) => void
-  ): Promise<boolean> {
-    if (this.isCapturing) {
-      console.warn('Camera capture is already running');
+  async startCapturing(): Promise<boolean> {
+    try {
+      console.log('CameraService: startCapturing called');
+      console.log('CameraService: isCapturing:', this.isCapturing);
+      console.log('CameraService: cameraRef:', this.cameraRef);
+      
+      if (this.isCapturing) {
+        console.log('CameraService: Camera is already capturing');
+        return true;
+      }
+
+      if (!this.cameraRef) {
+        console.log('CameraService: Camera not initialized');
+        this.onError?.('Camera not initialized');
+        return false;
+      }
+
+      console.log('CameraService: Requesting permissions...');
+      const hasPermission = await this.requestPermissions();
+      if (!hasPermission) {
+        console.log('CameraService: Permission denied');
+        return false;
+      }
+
+      console.log('CameraService: Setting up capture state...');
+      this.isCapturing = true;
+      this.sequenceNumber = 0;
+      this.onStatusChange?.(true);
+
+      console.log('CameraService: Starting continuous photo capture...');
+      console.log(`CameraService: Capture interval: ${this.config.intervalMs}ms`);
+
+      // Start capturing immediately
+      console.log('CameraService: Taking first photo...');
+      await this.capturePhoto();
+
+      // Set up interval for continuous capture
+      console.log('CameraService: Setting up capture interval...');
+      this.captureInterval = setInterval(async () => {
+        if (this.isCapturing) {
+          await this.capturePhoto();
+        }
+      }, this.config.intervalMs);
+
+      console.log('CameraService: Capture started successfully');
+      return true;
+    } catch (error) {
+      console.error('CameraService: Start capturing error:', error);
+      this.onError?.('Failed to start photo capture');
+      this.isCapturing = false;
+      this.onStatusChange?.(false);
       return false;
     }
-
-    const hasPermission = await this.requestCameraPermissions();
-    if (!hasPermission) {
-      onError('Camera permission not granted');
-      return false;
-    }
-
-    this.isCapturing = true;
-    this.sequenceNumber = 0;
-    this.onPhotoCaptured = onPhotoCaptured;
-    this.onError = onError;
-
-    console.log('Starting continuous camera capture - 1 photo per second');
-
-    // Start capturing immediately
-    this.capturePhoto(sessionId, userId);
-
-    // Set up interval for 1 photo per second (1000ms)
-    this.captureInterval = setInterval(() => {
-      this.capturePhoto(sessionId, userId);
-    }, 1000);
-
-    return true;
   }
 
-  stopContinuousCapture(): void {
-    if (!this.isCapturing) {
-      return;
-    }
-
-    console.log('Stopping continuous camera capture');
+  stopCapturing() {
+    console.log('Stopping continuous photo capture...');
+    
     this.isCapturing = false;
+    this.onStatusChange?.(false);
 
     if (this.captureInterval) {
       clearInterval(this.captureInterval);
       this.captureInterval = null;
     }
 
-    this.onPhotoCaptured = undefined;
-    this.onError = undefined;
+    console.log('Photo capture stopped');
   }
 
-  private async capturePhoto(sessionId: string, userId: string): Promise<void> {
-    if (!this.isCapturing) {
+  private async capturePhoto(): Promise<void> {
+    console.log('CameraService: capturePhoto called');
+    console.log('CameraService: cameraRef:', !!this.cameraRef);
+    console.log('CameraService: isCapturing:', this.isCapturing);
+    
+    if (!this.cameraRef || !this.isCapturing) {
+      console.log('CameraService: Skipping capture - no ref or not capturing');
       return;
     }
 
     try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.7, // Reduced quality for faster processing
-        maxWidth: 1280, // Reduced resolution for faster uploads
-        maxHeight: 720,
-        exif: false,
+      this.sequenceNumber++;
+      const timestamp = Date.now();
+
+      console.log(`CameraService: Capturing photo #${this.sequenceNumber} at ${new Date(timestamp).toISOString()}`);
+
+      // Take photo
+      console.log('CameraService: Calling takePictureAsync...');
+      const photo = await this.cameraRef.takePictureAsync({
+        quality: this.config.quality,
         base64: false,
+        skipProcessing: false,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const photo: SessionPhotoData = {
-          uri: result.assets[0].uri,
-          timestamp: Date.now(),
-          sessionId,
-          userId,
-          sequenceNumber: this.sequenceNumber++,
-        };
+      console.log('CameraService: Photo taken, processing...');
+      // Resize and optimize the photo
+      const manipulatedPhoto = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [
+          {
+            resize: {
+              width: this.config.maxWidth,
+              height: this.config.maxHeight,
+            },
+          },
+        ],
+        {
+          compress: this.config.quality,
+          format: ImageManipulator.SaveFormat.JPEG,
+        }
+      );
 
-        console.log(`Photo captured: sequence ${photo.sequenceNumber}, timestamp: ${photo.timestamp}`);
-        this.onPhotoCaptured?.(photo);
-      } else {
-        console.warn('Camera capture was canceled or failed');
-        this.onError?.('Camera capture failed');
-      }
+      const result: PhotoCaptureResult = {
+        uri: manipulatedPhoto.uri,
+        width: manipulatedPhoto.width,
+        height: manipulatedPhoto.height,
+        timestamp,
+        sequenceNumber: this.sequenceNumber,
+      };
+
+      console.log(`CameraService: Photo captured successfully: ${result.uri}`);
+      this.onPhotoCaptured?.(result);
+
     } catch (error) {
-      console.error('Error capturing photo:', error);
-      this.onError?.(`Camera error: ${error}`);
+      console.error('CameraService: Photo capture error:', error);
+      this.onError?.(`Failed to capture photo #${this.sequenceNumber}`);
     }
   }
 
-  isCurrentlyCapturing(): boolean {
-    return this.isCapturing;
-  }
-
-  getSequenceNumber(): number {
-    return this.sequenceNumber;
+  getStatus() {
+    return {
+      isCapturing: this.isCapturing,
+      sequenceNumber: this.sequenceNumber,
+      config: this.config,
+    };
   }
 }
 

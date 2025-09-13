@@ -95,17 +95,40 @@ const MainNavigator = () => (
 );
 
 export default function App() {
-  const { isAuthenticated, loading, user, token } = useAuth();
+  const { isAuthenticated, loading, user, token, renderKey, forceUpdate } = useAuth();
+  
+  // Force re-render state
+  const [forceRender, setForceRender] = React.useState(0);
+  const [appState, setAppState] = React.useState({ isAuthenticated, loading, user, token });
 
   console.log('App render - Auth state:', { 
     isAuthenticated, 
     loading, 
     hasUser: !!user, 
     hasToken: !!token,
-    userEmail: user?.email 
+    userEmail: user?.email,
+    renderKey,
+    forceRender
   });
   
-  console.log('Navigation decision:', isAuthenticated ? 'Main Navigator' : 'Auth Navigator');
+  console.log('Navigation decision:', appState.isAuthenticated ? 'Main Navigator' : 'Auth Navigator');
+  
+  // Update appState whenever auth state changes
+  React.useEffect(() => {
+    console.log('App useEffect - Auth state changed:', { 
+      isAuthenticated, 
+      loading, 
+      hasUser: !!user, 
+      hasToken: !!token,
+      renderKey
+    });
+    
+    // Update appState to force re-render
+    setAppState({ isAuthenticated, loading, user, token });
+    
+    // Force a re-render when auth state changes
+    setForceRender(prev => prev + 1);
+  }, [isAuthenticated, loading, user, token, renderKey]);
 
   if (loading) {
     return (
@@ -124,7 +147,7 @@ export default function App() {
             headerShown: false,
           }}
         >
-          {isAuthenticated ? (
+          {appState.isAuthenticated ? (
             <Stack.Screen name="Main" component={MainNavigator} />
           ) : (
             <Stack.Screen name="Auth" component={AuthNavigator} />

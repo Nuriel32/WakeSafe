@@ -19,6 +19,14 @@ export const useAuth = () => {
     loading: true,
     error: null,
   });
+  
+  // Force re-render counter to ensure App component updates
+  const [renderKey, setRenderKey] = useState(0);
+  
+  // Callback to force re-render from outside
+  const forceUpdate = useCallback(() => {
+    setRenderKey(prev => prev + 1);
+  }, []);
 
   // Initialize auth state from storage
   useEffect(() => {
@@ -90,14 +98,35 @@ export const useAuth = () => {
       console.log('Auth data stored successfully');
 
       console.log('Setting auth state...');
-      setAuthState({
+      const newAuthState = {
         isAuthenticated: true,
         user,
         token: data.token,
         loading: false,
         error: null,
+      };
+      console.log('New auth state:', newAuthState);
+      
+      // Use a more aggressive state update approach
+      setAuthState(prevState => {
+        console.log('Previous auth state:', prevState);
+        console.log('Updating to new auth state:', newAuthState);
+        return newAuthState;
       });
-      console.log('Auth state set successfully');
+      
+      // Force re-render by updating render key
+      setRenderKey(prev => {
+        const newKey = prev + 1;
+        console.log('Updating render key from', prev, 'to', newKey);
+        return newKey;
+      });
+      
+      console.log('Auth state set successfully - forcing re-render');
+      
+      // Add a single delay to ensure state update is processed
+      setTimeout(() => {
+        console.log('Auth state update completed - checking if App re-renders...');
+      }, 100);
 
       return data;
     } catch (error: any) {
@@ -155,8 +184,10 @@ export const useAuth = () => {
   }, []);
 
   const logout = useCallback(async () => {
+    console.log('🚪 Starting logout process...');
     try {
       if (authState.token) {
+        console.log('📡 Calling logout API...');
         // Call logout API
         await fetch(`${CONFIG.API_BASE_URL}/auth/logout`, {
           method: 'POST',
@@ -165,21 +196,36 @@ export const useAuth = () => {
             'Content-Type': 'application/json',
           },
         });
+        console.log('✅ Logout API called successfully');
       }
     } catch (error) {
-      console.error('Logout API error:', error);
+      console.error('❌ Logout API error:', error);
     } finally {
+      console.log('🧹 Clearing local storage...');
       // Clear local storage regardless of API response
       await AsyncStorage.removeItem(CONFIG.TOKEN_KEY);
       await AsyncStorage.removeItem(CONFIG.USER_KEY);
+      console.log('✅ Local storage cleared');
 
-      setAuthState({
+      console.log('🔄 Setting auth state to logged out...');
+      const newAuthState = {
         isAuthenticated: false,
         user: null,
         token: null,
         loading: false,
         error: null,
-      });
+      };
+      console.log('New logout auth state:', newAuthState);
+      setAuthState(newAuthState);
+      
+      // Force re-render by updating render key
+      setRenderKey(prev => prev + 1);
+      console.log('✅ Auth state set to logged out - forcing re-render');
+      
+      // Add a small delay to ensure state update is processed
+      setTimeout(() => {
+        console.log('🚪 Logout process completed - checking if App re-renders...');
+      }, 100);
     }
   }, [authState.token]);
 
@@ -228,5 +274,7 @@ export const useAuth = () => {
     register,
     logout,
     clearError,
+    renderKey, // Include renderKey to force re-renders
+    forceUpdate, // Include forceUpdate function
   };
 };

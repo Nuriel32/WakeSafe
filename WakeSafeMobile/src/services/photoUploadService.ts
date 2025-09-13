@@ -1,280 +1,226 @@
 import { CONFIG } from '../config';
-import { SessionPhotoData } from './cameraService';
+import { PhotoCaptureResult } from './cameraService';
 
-export interface UploadResult {
-  success: boolean;
-  photoId?: string;
-  gcsPath?: string;
-  error?: string;
-  sequenceNumber: number;
+export interface PresignedUrlResponse {
+  presignedUrl: string;
+  photoId: string;
+  gcsPath: string;
+  fileName: string;
+  contentType: string;
+  uploadInfo: {
+    sequenceNumber: number;
+    captureTimestamp: number;
+    folderType: string;
+  };
+  expiresIn: number;
 }
 
 export interface UploadProgress {
-  totalPhotos: number;
-  uploadedPhotos: number;
-  failedPhotos: number;
-  currentPhoto?: number;
+  photoId: string;
+  progress: number;
+  status: 'uploading' | 'completed' | 'failed';
+  error?: string;
 }
 
 class PhotoUploadService {
-  private uploadQueue: SessionPhotoData[] = [];
-  private isUploading = false;
-  private uploadProgress: UploadProgress = {
-    totalPhotos: 0,
-    uploadedPhotos: 0,
-    failedPhotos: 0,
-  };
-  private onProgress?: (progress: UploadProgress) => void;
-  private onUploadComplete?: (result: UploadResult) => void;
-  private onUploadError?: (error: string) => void;
+  private uploadQueue: Map<string, PhotoCaptureResult> = new Map();
+  private activeUploads: Map<string, AbortController> = new Map();
+  private uploadProgress: Map<string, UploadProgress> = new Map();
+
+  // Callbacks
+  private onUploadProgress?: (progress: UploadProgress) => void;
+  private onUploadCompleted?: (photoId: string, gcsPath: string) => void;
+  private onUploadFailed?: (photoId: string, error: string) => void;
+
+  setCallbacks(callbacks: {
+    onUploadProgress?: (progress: UploadProgress) => void;
+    onUploadCompleted?: (photoId: string, gcsPath: string) => void;
+    onUploadFailed?: (photoId: string, error: string) => void;
+  }) {
+    this.onUploadProgress = callbacks.onUploadProgress;
+    this.onUploadCompleted = callbacks.onUploadCompleted;
+    this.onUploadFailed = callbacks.onUploadFailed;
+  }
 
   async uploadPhoto(
-    photo: SessionPhotoData,
+    photo: PhotoCaptureResult,
+    sessionId: string,
     token: string,
-    onProgress?: (progress: UploadProgress) => void,
-    onComplete?: (result: UploadResult) => void,
-    onError?: (error: string) => void
+    location?: { latitude: number; longitude: number }
   ): Promise<void> {
-    this.onProgress = onProgress;
-    this.onUploadComplete = onComplete;
-    this.onUploadError = onError;
-
     try {
-      console.log(`Uploading photo sequence ${photo.sequenceNumber}...`);
+      console.log(`Starting upload for photo #${photo.sequenceNumber}`);
 
-      const formData = new FormData();
-      
-      // Create file object with proper naming
-      const fileName = `photo_${photo.sequenceNumber.toString().padStart(6, '0')}_${photo.timestamp}.jpg`;
-      const file = {
-        uri: photo.uri,
-        type: 'image/jpeg',
-        name: fileName,
-      } as any;
+      // Generate unique filename
+      const timestamp = photo.timestamp;
+      const sequenceNumber = photo.sequenceNumber;
+      const random = Math.random().toString(36).substring(2, 8);
+      const fileName = `photo_${sequenceNumber.toString().padStart(6, '0')}_${timestamp}_${random}.jpg`;
 
-      formData.append('photo', file);
-      formData.append('sessionId', photo.sessionId);
-      formData.append('userId', photo.userId);
-      formData.append('sequenceNumber', photo.sequenceNumber.toString());
-      formData.append('timestamp', photo.timestamp.toString());
-      formData.append('folderType', 'before-ai'); // Photos go to before-ai folder initially
+      // Request presigned URL
+      const presignedData = await this.getPresignedUrl(
+        fileName,
+        sessionId,
+        sequenceNumber,
+        timestamp,
+        location,
+        token
+      );
 
-      // Add location if available
-      try {
-        const location = await this.getCurrentLocation();
-        if (location) {
-          formData.append('location', JSON.stringify(location));
-        }
-      } catch (error) {
-        console.warn('Failed to get location:', error);
-      }
+      console.log(`Presigned URL received for photo #${photo.sequenceNumber}`);
 
-      // Add client metadata
-      formData.append('clientMeta', JSON.stringify({
-        userAgent: 'WakeSafe Mobile App',
-        timestamp: Date.now(),
-        captureType: 'continuous',
-        sequenceNumber: photo.sequenceNumber,
-      }));
+      // Upload photo to GCS using presigned URL
+      await this.uploadToGCS(photo.uri, presignedData, photo.sequenceNumber);
 
-      const result = await this.performUpload(formData, token);
-      
-      if (result.success) {
-        this.uploadProgress.uploadedPhotos++;
-        console.log(`Photo ${photo.sequenceNumber} uploaded successfully: ${result.gcsPath}`);
-        this.onUploadComplete?.(result);
-      } else {
-        this.uploadProgress.failedPhotos++;
-        console.error(`Photo ${photo.sequenceNumber} upload failed: ${result.error}`);
-        this.onUploadError?.(result.error || 'Upload failed');
-      }
+      // Confirm upload to server
+      await this.confirmUpload(presignedData.photoId, true, token);
 
-      this.updateProgress();
+      console.log(`Photo #${photo.sequenceNumber} uploaded successfully`);
+
     } catch (error) {
-      this.uploadProgress.failedPhotos++;
-      const errorMessage = `Upload error for photo ${photo.sequenceNumber}: ${error}`;
-      console.error(errorMessage);
-      this.onUploadError?.(errorMessage);
-      this.updateProgress();
+      console.error(`Upload failed for photo #${photo.sequenceNumber}:`, error);
+      this.onUploadFailed?.(photo.sequenceNumber.toString(), error instanceof Error ? error.message : 'Upload failed');
     }
   }
 
-  private async performUpload(photo: SessionPhotoData, token: string): Promise<UploadResult> {
+  private async getPresignedUrl(
+    fileName: string,
+    sessionId: string,
+    sequenceNumber: number,
+    timestamp: number,
+    location?: { latitude: number; longitude: number },
+    token?: string
+  ): Promise<PresignedUrlResponse> {
     try {
-      // Step 1: Get presigned URL from backend
-      console.log('Getting presigned URL for upload...');
-      const presignedResponse = await fetch(`${CONFIG.API_BASE_URL}/upload/presigned`, {
+      const response = await fetch(`${CONFIG.API_BASE_URL}/upload/presigned`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          fileName: `photo_${photo.sequenceNumber.toString().padStart(6, '0')}_${photo.timestamp}.jpg`,
-          sessionId: photo.sessionId,
-          sequenceNumber: photo.sequenceNumber,
-          timestamp: photo.timestamp,
-          location: await this.getCurrentLocation(),
-          clientMeta: {
-            userAgent: 'WakeSafe Mobile App',
-            timestamp: Date.now(),
-            captureType: 'continuous',
-            sequenceNumber: photo.sequenceNumber,
-          }
-        })
+          fileName,
+          sessionId,
+          sequenceNumber,
+          timestamp,
+          location: location ? JSON.stringify(location) : null,
+          clientMeta: JSON.stringify({
+            deviceType: 'mobile',
+            appVersion: '1.0.0',
+            platform: 'react-native',
+          }),
+        }),
       });
 
-      if (!presignedResponse.ok) {
-        throw new Error(`Failed to get presigned URL: ${presignedResponse.status}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get presigned URL');
       }
 
-      const presignedData = await presignedResponse.json();
-      console.log('Presigned URL received:', presignedData.presignedUrl);
-
-      // Step 2: Upload directly to GCS using presigned URL
-      console.log('Uploading to GCS...');
-      const uploadResponse = await this.uploadToGCS(photo.uri, presignedData, token);
-
-      if (uploadResponse.success) {
-        // Step 3: Confirm upload with backend
-        console.log('Confirming upload with backend...');
-        const confirmResponse = await fetch(`${CONFIG.API_BASE_URL}/upload/confirm`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            photoId: presignedData.photoId,
-            uploadSuccess: true
-          })
-        });
-
-        if (confirmResponse.ok) {
-          const confirmData = await confirmResponse.json();
-          console.log('Upload confirmed, AI processing queued:', confirmData.aiProcessingQueued);
-        }
-      }
-
-      return uploadResponse;
+      return await response.json();
     } catch (error) {
-      console.error('Upload process failed:', error);
-      return {
-        success: false,
-        error: `Upload failed: ${error}`,
-        sequenceNumber: photo.sequenceNumber,
-      };
+      console.error('Presigned URL request failed:', error);
+      throw error;
     }
   }
 
-  private async uploadToGCS(uri: string, presignedData: any, token: string): Promise<UploadResult> {
-    return new Promise((resolve) => {
-      const xhr = new XMLHttpRequest();
-
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          const progress = (event.loaded / event.total) * 100;
-          console.log(`GCS Upload progress: ${progress.toFixed(1)}%`);
-          this.onProgress?.({
-            totalPhotos: 1,
-            uploadedPhotos: 0,
-            failedPhotos: 0,
-            currentPhoto: progress
-          });
-        }
-      });
-
-      xhr.addEventListener('load', () => {
-        try {
-          if (xhr.status === 200 || xhr.status === 201) {
-            resolve({
-              success: true,
-              photoId: presignedData.photoId,
-              gcsPath: presignedData.gcsPath,
-              sequenceNumber: presignedData.uploadInfo.sequenceNumber,
-            });
-          } else {
-            resolve({
-              success: false,
-              error: `GCS upload failed with status: ${xhr.status}`,
-              sequenceNumber: presignedData.uploadInfo.sequenceNumber,
-            });
-          }
-        } catch (error) {
-          resolve({
-            success: false,
-            error: `Failed to parse GCS response: ${error}`,
-            sequenceNumber: presignedData.uploadInfo.sequenceNumber,
-          });
-        }
-      });
-
-      xhr.addEventListener('error', () => {
-        resolve({
-          success: false,
-          error: 'Network error during GCS upload',
-          sequenceNumber: presignedData.uploadInfo.sequenceNumber,
-        });
-      });
-
-      xhr.addEventListener('timeout', () => {
-        resolve({
-          success: false,
-          error: 'GCS upload timeout',
-          sequenceNumber: presignedData.uploadInfo.sequenceNumber,
-        });
-      });
-
-      // Create FormData for GCS upload
-      const formData = new FormData();
-      formData.append('file', {
-        uri: uri,
-        type: presignedData.contentType,
-        name: presignedData.fileName,
-      } as any);
-
-      xhr.open('PUT', presignedData.presignedUrl);
-      xhr.setRequestHeader('Content-Type', presignedData.contentType);
-      xhr.timeout = 60000; // 60 second timeout for GCS
-      xhr.send(formData);
-    });
-  }
-
-  private async getCurrentLocation(): Promise<any> {
+  private async uploadToGCS(
+    photoUri: string,
+    presignedData: PresignedUrlResponse,
+    sequenceNumber: number
+  ): Promise<void> {
     try {
-      // This is a simplified location request
-      // In a real app, you'd use expo-location
-      return {
-        latitude: 32.0853,
-        longitude: 34.7818,
-        accuracy: 10,
-        timestamp: Date.now(),
-      };
+      // Create abort controller for this upload
+      const abortController = new AbortController();
+      this.activeUploads.set(sequenceNumber.toString(), abortController);
+
+      // Read photo as blob
+      const response = await fetch(photoUri);
+      const blob = await response.blob();
+
+      // Upload to GCS
+      const uploadResponse = await fetch(presignedData.presignedUrl, {
+        method: 'PUT',
+        body: blob,
+        headers: {
+          'Content-Type': presignedData.contentType,
+        },
+        signal: abortController.signal,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`GCS upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+      console.log(`Photo #${sequenceNumber} uploaded to GCS successfully`);
+      this.activeUploads.delete(sequenceNumber.toString());
+
     } catch (error) {
-      return null;
+      this.activeUploads.delete(sequenceNumber.toString());
+      throw error;
     }
   }
 
-  private updateProgress(): void {
-    this.onProgress?.(this.uploadProgress);
+  private async confirmUpload(
+    photoId: string,
+    success: boolean,
+    token?: string
+  ): Promise<void> {
+    try {
+      const response = await fetch(`${CONFIG.API_BASE_URL}/upload/confirm`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          photoId,
+          uploadSuccess: success,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to confirm upload');
+      }
+
+      const result = await response.json();
+      console.log('Upload confirmed:', result);
+
+    } catch (error) {
+      console.error('Upload confirmation failed:', error);
+      throw error;
+    }
   }
 
-  setTotalPhotos(total: number): void {
-    this.uploadProgress.totalPhotos = total;
-    this.uploadProgress.uploadedPhotos = 0;
-    this.uploadProgress.failedPhotos = 0;
+  cancelUpload(sequenceNumber: number) {
+    const abortController = this.activeUploads.get(sequenceNumber.toString());
+    if (abortController) {
+      abortController.abort();
+      this.activeUploads.delete(sequenceNumber.toString());
+    }
   }
 
-  getProgress(): UploadProgress {
-    return { ...this.uploadProgress };
+  cancelAllUploads() {
+    this.activeUploads.forEach((controller) => {
+      controller.abort();
+    });
+    this.activeUploads.clear();
   }
 
-  reset(): void {
-    this.uploadProgress = {
-      totalPhotos: 0,
-      uploadedPhotos: 0,
-      failedPhotos: 0,
-    };
+  getUploadStatus(sequenceNumber: number): UploadProgress | undefined {
+    return this.uploadProgress.get(sequenceNumber.toString());
+  }
+
+  getAllUploadStatuses(): UploadProgress[] {
+    return Array.from(this.uploadProgress.values());
+  }
+
+  reset() {
+    this.uploadQueue.clear();
+    this.cancelAllUploads();
+    this.uploadProgress.clear();
+    console.log('Photo upload service reset');
   }
 }
 

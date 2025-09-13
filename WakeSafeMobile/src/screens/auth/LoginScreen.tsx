@@ -53,6 +53,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
       const result = await login(email.trim(), password);
       console.log('Login result:', result);
       console.log('Login completed - waiting for navigation...');
+      
+      // Add timeout to check if App component re-renders
+      setTimeout(() => {
+        console.log('Forcing re-render check...');
+        console.log('Current time:', new Date().toISOString());
+      }, 1000);
+      
       // Navigation will be handled by the auth state change
     } catch (error: any) {
       console.error('Login error:', error);
