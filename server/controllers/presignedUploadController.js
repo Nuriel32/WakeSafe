@@ -27,22 +27,24 @@ async function generatePresignedUrl(req, res) {
         }
 
         // Generate presigned URL
-        const uploadInfo = await generatePresignedUploadUrl(
-            userId,
-            sessionId,
+        const contentType = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+        const gcsPath = `sessions/${sessionId}/photos/${fileName}`;
+        const presignedUrl = await generatePresignedUploadUrl(gcsPath, contentType, 60);
+        
+        // Create upload info object
+        const uploadInfo = {
+            presignedUrl,
+            photoId: `photo_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+            gcsPath,
             fileName,
-            {
+            contentType,
+            uploadInfo: {
                 sequenceNumber: sequenceNumber ? parseInt(sequenceNumber) : null,
                 captureTimestamp: timestamp ? parseInt(timestamp) : Date.now(),
-                location: location ? JSON.parse(location) : null,
-                clientMeta: clientMeta ? JSON.parse(clientMeta) : null,
-                deviceInfo: {
-                    userAgent: req.headers['user-agent'],
-                    contentType: `image/${extension === 'jpg' ? 'jpeg' : extension}`
-                }
+                folderType: 'before-ai'
             },
-            'before-ai'
-        );
+            expiresIn: 60
+        };
 
         // Create photo document with pending status
         const photo = await Photo.create({

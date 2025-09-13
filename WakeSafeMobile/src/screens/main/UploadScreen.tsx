@@ -33,6 +33,7 @@ export const UploadScreen: React.FC = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [capturedPhotos, setCapturedPhotos] = useState<PhotoCaptureResult[]>([]);
   const [uploadStatuses, setUploadStatuses] = useState<Map<string, UploadProgress>>(new Map());
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   
   // Camera ref
   const cameraRef = useRef<CameraView>(null);
@@ -65,7 +66,7 @@ export const UploadScreen: React.FC = () => {
   const requestCameraPermission = async () => {
     try {
       console.log('UploadScreen: Requesting camera permission...');
-      const { status } = await Camera.requestCameraPermissionsAsync();
+      const { status } = await Camera.getCameraPermissionsAsync();
       const granted = status === 'granted';
       console.log('UploadScreen: Camera permission request result:', { status, granted });
       setCameraPermission({ granted, status });
@@ -133,6 +134,8 @@ export const UploadScreen: React.FC = () => {
     console.log('UploadScreen: Session effect triggered, currentSession:', currentSession);
     if (currentSession) {
       console.log('UploadScreen: Session found, setting active and starting camera');
+      const sessionId = currentSession._id;
+      setActiveSessionId(sessionId);
       setIsSessionActive(true);
       
       // Check camera permissions for existing session
@@ -169,6 +172,8 @@ export const UploadScreen: React.FC = () => {
       startCaptureWithPermissions();
     } else {
       console.log('UploadScreen: No current session');
+      setActiveSessionId(null);
+      setIsSessionActive(false);
     }
   }, [currentSession]);
 
@@ -176,10 +181,10 @@ export const UploadScreen: React.FC = () => {
     console.log(`UploadScreen: Photo captured: #${photo.sequenceNumber}`);
     setCapturedPhotos(prev => [...prev, photo]);
 
-    if (currentSession && token) {
+    if (activeSessionId && token) {
       try {
-        // Get session ID (handle both _id and id properties)
-        const sessionId = currentSession._id || currentSession.id;
+        // Use stored session ID
+        const sessionId = activeSessionId;
         
         // Emit photo captured event via WebSocket
         console.log(`UploadScreen: Emitting photo_captured via WebSocket for photo #${photo.sequenceNumber}`);
@@ -197,6 +202,7 @@ export const UploadScreen: React.FC = () => {
       }
     } else {
       console.log('UploadScreen: No session or token available for photo upload');
+      console.log('UploadScreen: activeSessionId:', activeSessionId, 'token:', token ? 'present' : 'missing');
     }
   };
 
@@ -310,7 +316,7 @@ export const UploadScreen: React.FC = () => {
     try {
       if (currentSession) {
         // Handle both _id and id properties
-        const sessionId = currentSession._id || currentSession.id;
+        const sessionId = currentSession._id;
         console.log('Ending session:', sessionId);
         console.log('Current session object:', currentSession);
         
@@ -319,6 +325,7 @@ export const UploadScreen: React.FC = () => {
         }
         
         await endSession(sessionId);
+        setActiveSessionId(null);
         setIsSessionActive(false);
         cameraService.stopCapturing();
         setCapturedPhotos([]);
@@ -351,8 +358,6 @@ export const UploadScreen: React.FC = () => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
         quality: 0.8,
-        maxWidth: 1920,
-        maxHeight: 1080,
       });
 
       console.log('Image library result:', result);
@@ -373,7 +378,7 @@ export const UploadScreen: React.FC = () => {
   const takePhoto = async () => {
     try {
       console.log('Requesting camera permissions...');
-      const { status } = await CameraView.requestCameraPermissionsAsync();
+      const { status } = await Camera.getCameraPermissionsAsync();
       console.log('Camera permission status:', status);
       
       if (status !== 'granted') {
@@ -384,8 +389,6 @@ export const UploadScreen: React.FC = () => {
       console.log('Launching camera...');
       const result = await ImagePicker.launchCameraAsync({
         quality: 0.8,
-        maxWidth: 1920,
-        maxHeight: 1080,
         allowsEditing: false,
         exif: false,
       });
@@ -498,7 +501,7 @@ export const UploadScreen: React.FC = () => {
 
   const getCurrentLocation = async () => {
     try {
-      const { status } = await ImagePicker.requestLocationPermissionsAsync();
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         return null;
       }
