@@ -5,37 +5,41 @@ async function connectDB() {
   const uri = process.env.MONGO_URI;
   if (!uri) {
     console.warn('[DB] MONGO_URI is not set; skipping Mongo connection');
-    return; // <- do nothing if not provided
+    return;
+  }
+
+  // בדיקה אם יש שם DB בתוך ה-URI עצמו
+  const hasDbInUri = /mongodb(\+srv)?:\/\/[^/]+\/[^?]+/.test(uri);
+
+  const opts = {
+    serverSelectionTimeoutMS: 90000,   // 90s - זמן בחירת שרת
+    connectTimeoutMS: 60000,           // 60s - זמן התחברות
+    socketTimeoutMS: 180000,           // 180s - זמן סוקט
+    maxPoolSize: Number(process.env.MONGO_POOL_SIZE || 5),
+    retryWrites: true,
+    retryReads: true,
+  };
+
+  // אם אין שם DB ב-URI, נוסיף מה-env
+  if (!hasDbInUri && process.env.MONGO_DB) {
+    opts.dbName = process.env.MONGO_DB;
   }
 
   const maxRetries = 3;
-  let retryCount = 0;
-
-  while (retryCount < maxRetries) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[DB] Attempting to connect to MongoDB (attempt ${retryCount + 1}/${maxRetries})...`);
-      await mongoose.connect(uri, {
-        dbName: process.env.MONGO_DB,
-        serverSelectionTimeoutMS: 30000, // 30 seconds for cloud connections
-        connectTimeoutMS: 30000, // 30 seconds connection timeout
-        socketTimeoutMS: 45000, // 45 seconds socket timeout
-        maxPoolSize: 10, // Maintain up to 10 socket connections
-        serverSelectionRetryDelayMS: 5000, // Wait 5 seconds between retries
-        heartbeatFrequencyMS: 10000, // Send a ping every 10 seconds
-        retryWrites: true, // Retry write operations
-        retryReads: true, // Retry read operations
-      });
-      console.info('[DB] MongoDB connected successfully');
-      return; // Success, exit the retry loop
+      console.log(`[DB] Attempting MongoDB connection (attempt ${attempt}/${maxRetries})...`);
+      await mongoose.connect(uri, opts);
+      console.info(`[DB] MongoDB connected successfully (db: ${mongoose.connection.name})`);
+      return;
     } catch (err) {
-      retryCount++;
-      console.error(`[DB] MongoDB connection failed (attempt ${retryCount}/${maxRetries}):`, err.message);
-      
-      if (retryCount < maxRetries) {
-        console.log(`[DB] Retrying in 5 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+      console.error(`[DB] MongoDB connection failed (attempt ${attempt}): ${err.message}`);
+      if (attempt < maxRetries) {
+        const backoff = 5000 * attempt;
+        console.log(`[DB] Retrying in ${backoff / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, backoff));
       } else {
-        console.error('[DB] MongoDB connection failed after all retries:', err.message);
+        console.error('[DB] All retries failed');
         console.error('[DB] Full error:', err);
       }
     }
