@@ -1,4 +1,4 @@
-import { Camera } from 'expo-camera';
+import { CameraView, Camera } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Alert } from 'react-native';
 
@@ -18,7 +18,7 @@ export interface CameraServiceConfig {
 }
 
 class CameraService {
-  private cameraRef: Camera | null = null;
+  private cameraRef: CameraView | null = null;
   private isCapturing = false;
   private captureInterval: NodeJS.Timeout | null = null;
   private sequenceNumber = 0;
@@ -34,7 +34,7 @@ class CameraService {
   private onError?: (error: string) => void;
   private onStatusChange?: (isCapturing: boolean) => void;
 
-  setCameraRef(ref: Camera | null) {
+  setCameraRef(ref: CameraView | null) {
     console.log('CameraService: Setting camera ref:', ref);
     this.cameraRef = ref;
   }
@@ -55,8 +55,12 @@ class CameraService {
 
   async requestPermissions(): Promise<boolean> {
     try {
+      console.log('CameraService: Requesting camera permissions...');
       const { status } = await Camera.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
+      const granted = status === 'granted';
+      console.log('CameraService: Permission request result:', { status, granted });
+      
+      if (!granted) {
         Alert.alert(
           'Camera Permission Required',
           'Please grant camera permissions to start the session and capture photos for fatigue detection.'

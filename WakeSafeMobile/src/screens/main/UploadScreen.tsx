@@ -11,7 +11,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera } from 'expo-camera';
+import { CameraView, Camera } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useSession } from '../../hooks/useSession';
 import { useAuth } from '../../hooks/useAuth';
@@ -23,6 +23,7 @@ import { websocketService, PhotoCaptureEvent } from '../../services/websocketSer
 export const UploadScreen: React.FC = () => {
   const { currentSession, startSession, endSession, loading: sessionLoading } = useSession();
   const { token, user } = useAuth();
+  const [cameraPermission, setCameraPermission] = useState<{ granted: boolean; status: string } | null>(null);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
@@ -34,12 +35,55 @@ export const UploadScreen: React.FC = () => {
   const [uploadStatuses, setUploadStatuses] = useState<Map<string, UploadProgress>>(new Map());
   
   // Camera ref
-  const cameraRef = useRef<Camera>(null);
+  const cameraRef = useRef<CameraView>(null);
   const { width, height } = Dimensions.get('window');
+
+  // Check camera permissions
+  const checkCameraPermission = async () => {
+    try {
+      console.log('UploadScreen: Checking camera permission...');
+      const { status } = await Camera.getCameraPermissionsAsync();
+      const granted = status === 'granted';
+      console.log('UploadScreen: Camera permission status:', { status, granted });
+      setCameraPermission({ granted, status });
+      
+      // If camera is already showing, update state to reflect that
+      if (granted && cameraRef.current) {
+        console.log('UploadScreen: Camera is already loaded and permissions are granted');
+        setCameraPermission({ granted: true, status: 'granted' });
+      }
+      
+      return granted;
+    } catch (error) {
+      console.error('UploadScreen: Error checking camera permission:', error);
+      setCameraPermission({ granted: false, status: 'error' });
+      return false;
+    }
+  };
+
+  // Request camera permissions
+  const requestCameraPermission = async () => {
+    try {
+      console.log('UploadScreen: Requesting camera permission...');
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      const granted = status === 'granted';
+      console.log('UploadScreen: Camera permission request result:', { status, granted });
+      setCameraPermission({ granted, status });
+      return granted;
+    } catch (error) {
+      console.error('UploadScreen: Error requesting camera permission:', error);
+      setCameraPermission({ granted: false, status: 'error' });
+      Alert.alert('Permission Error', 'Failed to request camera permission. Please check your device settings.');
+      return false;
+    }
+  };
 
   // Initialize camera service and WebSocket
   useEffect(() => {
     console.log('UploadScreen: Initializing camera service and WebSocket...');
+    
+    // Check camera permissions on mount
+    checkCameraPermission();
     
     // Set camera ref when component mounts
     if (cameraRef.current) {
@@ -90,19 +134,39 @@ export const UploadScreen: React.FC = () => {
     if (currentSession) {
       console.log('UploadScreen: Session found, setting active and starting camera');
       setIsSessionActive(true);
-      // Start camera capture if session is active
-      if (cameraRef.current) {
-        console.log('UploadScreen: Camera ref available, starting capture');
-        cameraService.startCapturing().then((started) => {
-          if (started) {
-            console.log('UploadScreen: Camera capture started for existing session');
-          } else {
-            console.log('UploadScreen: Failed to start camera capture for existing session');
+      
+      // Check camera permissions for existing session
+      const startCaptureWithPermissions = async () => {
+        try {
+          const hasPermission = await checkCameraPermission();
+          if (!hasPermission) {
+            console.log('UploadScreen: Camera permission not granted for existing session');
+            Alert.alert('Permission Required', 'Camera permission is required. Please grant camera access first.');
+            return;
           }
-        });
-      } else {
-        console.log('UploadScreen: Camera ref not available yet');
-      }
+          
+          console.log('UploadScreen: Camera permissions already granted for existing session');
+          
+          // Wait a bit for camera to be ready, then start capture
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          
+          if (cameraRef.current) {
+            console.log('UploadScreen: Camera ref available after delay, starting capture');
+            const started = await cameraService.startCapturing();
+            if (started) {
+              console.log('UploadScreen: Camera capture started for existing session');
+            } else {
+              console.log('UploadScreen: Failed to start camera capture for existing session');
+            }
+          } else {
+            console.log('UploadScreen: Camera ref still not available after delay');
+          }
+        } catch (error) {
+          console.error('UploadScreen: Error starting capture for existing session:', error);
+        }
+      };
+      
+      startCaptureWithPermissions();
     } else {
       console.log('UploadScreen: No current session');
     }
@@ -114,17 +178,20 @@ export const UploadScreen: React.FC = () => {
 
     if (currentSession && token) {
       try {
+        // Get session ID (handle both _id and id properties)
+        const sessionId = currentSession._id || currentSession.id;
+        
         // Emit photo captured event via WebSocket
         console.log(`UploadScreen: Emitting photo_captured via WebSocket for photo #${photo.sequenceNumber}`);
         websocketService.emitPhotoCaptured({
           sequenceNumber: photo.sequenceNumber,
           timestamp: photo.timestamp,
-          sessionId: currentSession.id,
+          sessionId: sessionId,
         });
 
         // Upload photo to GCS
         console.log(`UploadScreen: Starting photo upload for photo #${photo.sequenceNumber}`);
-        await photoUploadService.uploadPhoto(photo, currentSession.id, token);
+        await photoUploadService.uploadPhoto(photo, sessionId, token);
       } catch (error) {
         console.error('UploadScreen: Photo upload failed:', error);
       }
@@ -189,6 +256,18 @@ export const UploadScreen: React.FC = () => {
   const handleStartSession = async () => {
     try {
       console.log('UploadScreen: Starting new session...');
+      
+      // Check camera permissions
+      const hasPermission = await checkCameraPermission();
+      if (!hasPermission) {
+        const granted = await requestCameraPermission();
+        if (!granted) {
+          Alert.alert('Permission Required', 'Camera permission is required to start a session. Please grant camera access first.');
+          return;
+        }
+      }
+      console.log('UploadScreen: Camera permissions granted');
+      
       const session = await startSession();
       
       if (session) {
@@ -230,8 +309,16 @@ export const UploadScreen: React.FC = () => {
   const handleEndSession = async () => {
     try {
       if (currentSession) {
-        console.log('Ending session:', currentSession.id);
-        await endSession(currentSession.id);
+        // Handle both _id and id properties
+        const sessionId = currentSession._id || currentSession.id;
+        console.log('Ending session:', sessionId);
+        console.log('Current session object:', currentSession);
+        
+        if (!sessionId) {
+          throw new Error('Session ID not found in current session');
+        }
+        
+        await endSession(sessionId);
         setIsSessionActive(false);
         cameraService.stopCapturing();
         setCapturedPhotos([]);
@@ -286,7 +373,7 @@ export const UploadScreen: React.FC = () => {
   const takePhoto = async () => {
     try {
       console.log('Requesting camera permissions...');
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      const { status } = await CameraView.requestCameraPermissionsAsync();
       console.log('Camera permission status:', status);
       
       if (status !== 'granted') {
@@ -501,14 +588,51 @@ export const UploadScreen: React.FC = () => {
         {isSessionActive && (
           <View style={styles.cameraContainer}>
             <Text style={styles.cameraTitle}>Live Camera Feed</Text>
-            <View style={styles.cameraWrapper}>
-              <Camera
-                ref={cameraRef}
-                style={styles.camera}
-                type={Camera.Constants.Type.front}
-                ratio="16:9"
-              />
-            </View>
+            <Text style={styles.debugText}>Camera should be visible here</Text>
+            
+            {!cameraPermission?.granted ? (
+              <View style={styles.permissionContainer}>
+                <Text style={styles.permissionText}>Camera permission is required</Text>
+                <Text style={styles.debugText}>Permission status: {cameraPermission?.status || 'unknown'}</Text>
+                <TouchableOpacity 
+                  style={styles.permissionButton} 
+                  onPress={requestCameraPermission}
+                >
+                  <Text style={styles.permissionButtonText}>Grant Camera Permission</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.permissionButton, { backgroundColor: '#64748b', marginTop: 10 }]} 
+                  onPress={checkCameraPermission}
+                >
+                  <Text style={styles.permissionButtonText}>Check Permission Status</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.cameraWrapper}>
+                <CameraView
+                  ref={cameraRef}
+                  style={styles.camera}
+                  facing="front"
+                  mirror={true}
+                  onCameraReady={() => {
+                    console.log('UploadScreen: Camera is ready!');
+                    // Update permission state since camera loaded successfully
+                    setCameraPermission({ granted: true, status: 'granted' });
+                    // Set camera ref when camera is ready
+                    if (cameraRef.current) {
+                      console.log('UploadScreen: Setting camera ref in service from onCameraReady');
+                      cameraService.setCameraRef(cameraRef.current);
+                    }
+                  }}
+                  onMountError={(error: any) => {
+                    console.error('UploadScreen: Camera mount error:', error);
+                    setCameraPermission({ granted: false, status: 'error' });
+                    Alert.alert('Camera Error', 'Failed to initialize camera. Please check permissions.');
+                  }}
+                />
+              </View>
+            )}
           </View>
         )}
 
@@ -893,6 +1017,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1e293b',
     marginBottom: 10,
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontStyle: 'italic',
+    marginBottom: 5,
+  },
+  permissionContainer: {
+    backgroundColor: '#f8fafc',
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  permissionText: {
+    fontSize: 16,
+    color: '#64748b',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  permissionButton: {
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  permissionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   cameraWrapper: {
     borderRadius: 12,
