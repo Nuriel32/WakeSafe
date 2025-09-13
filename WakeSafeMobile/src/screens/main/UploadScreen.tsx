@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,19 +8,241 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Camera } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useSession } from '../../hooks/useSession';
 import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
+import { cameraService, PhotoCaptureResult } from '../../services/cameraService';
+import { photoUploadService, UploadProgress } from '../../services/photoUploadService';
+import { websocketService, PhotoCaptureEvent } from '../../services/websocketService';
 
 export const UploadScreen: React.FC = () => {
-  const { currentSession } = useSession();
-  const { token } = useAuth();
+  const { currentSession, startSession, endSession, loading: sessionLoading } = useSession();
+  const { token, user } = useAuth();
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
+  
+  // Session state
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [capturedPhotos, setCapturedPhotos] = useState<PhotoCaptureResult[]>([]);
+  const [uploadStatuses, setUploadStatuses] = useState<Map<string, UploadProgress>>(new Map());
+  
+  // Camera ref
+  const cameraRef = useRef<Camera>(null);
+  const { width, height } = Dimensions.get('window');
+
+  // Initialize camera service and WebSocket
+  useEffect(() => {
+    console.log('UploadScreen: Initializing camera service and WebSocket...');
+    
+    // Set camera ref when component mounts
+    if (cameraRef.current) {
+      console.log('UploadScreen: Camera ref found, setting in service');
+      cameraService.setCameraRef(cameraRef.current);
+    } else {
+      console.log('UploadScreen: Camera ref not found yet');
+    }
+    
+    cameraService.setCallbacks({
+      onPhotoCaptured: handlePhotoCaptured,
+      onError: handleCameraError,
+      onStatusChange: setIsCapturing,
+    });
+
+    photoUploadService.setCallbacks({
+      onUploadProgress: handleUploadProgress,
+      onUploadCompleted: handleUploadCompleted,
+      onUploadFailed: handleUploadFailed,
+    });
+
+    // Set up WebSocket handlers
+    websocketService.setOnPhotoCaptureConfirmed(handlePhotoCaptureConfirmed);
+    websocketService.setOnUploadNotification(handleUploadNotification);
+    websocketService.setOnUploadProgress(handleWebSocketUploadProgress);
+    websocketService.setOnUploadCompleted(handleWebSocketUploadCompleted);
+    websocketService.setOnUploadFailed(handleWebSocketUploadFailed);
+
+    return () => {
+      console.log('UploadScreen: Cleaning up camera service...');
+      cameraService.stopCapturing();
+      photoUploadService.cancelAllUploads();
+    };
+  }, []);
+
+  // Update camera ref when camera component mounts
+  useEffect(() => {
+    console.log('UploadScreen: Camera ref effect triggered, ref:', cameraRef.current);
+    if (cameraRef.current) {
+      console.log('UploadScreen: Setting camera ref in service');
+      cameraService.setCameraRef(cameraRef.current);
+    }
+  }, [cameraRef.current]);
+
+  // Check for existing session on mount and start camera if needed
+  useEffect(() => {
+    console.log('UploadScreen: Session effect triggered, currentSession:', currentSession);
+    if (currentSession) {
+      console.log('UploadScreen: Session found, setting active and starting camera');
+      setIsSessionActive(true);
+      // Start camera capture if session is active
+      if (cameraRef.current) {
+        console.log('UploadScreen: Camera ref available, starting capture');
+        cameraService.startCapturing().then((started) => {
+          if (started) {
+            console.log('UploadScreen: Camera capture started for existing session');
+          } else {
+            console.log('UploadScreen: Failed to start camera capture for existing session');
+          }
+        });
+      } else {
+        console.log('UploadScreen: Camera ref not available yet');
+      }
+    } else {
+      console.log('UploadScreen: No current session');
+    }
+  }, [currentSession]);
+
+  const handlePhotoCaptured = async (photo: PhotoCaptureResult) => {
+    console.log(`UploadScreen: Photo captured: #${photo.sequenceNumber}`);
+    setCapturedPhotos(prev => [...prev, photo]);
+
+    if (currentSession && token) {
+      try {
+        // Emit photo captured event via WebSocket
+        console.log(`UploadScreen: Emitting photo_captured via WebSocket for photo #${photo.sequenceNumber}`);
+        websocketService.emitPhotoCaptured({
+          sequenceNumber: photo.sequenceNumber,
+          timestamp: photo.timestamp,
+          sessionId: currentSession.id,
+        });
+
+        // Upload photo to GCS
+        console.log(`UploadScreen: Starting photo upload for photo #${photo.sequenceNumber}`);
+        await photoUploadService.uploadPhoto(photo, currentSession.id, token);
+      } catch (error) {
+        console.error('UploadScreen: Photo upload failed:', error);
+      }
+    } else {
+      console.log('UploadScreen: No session or token available for photo upload');
+    }
+  };
+
+  const handleCameraError = (error: string) => {
+    console.error('Camera error:', error);
+    Alert.alert('Camera Error', error);
+  };
+
+  const handleUploadProgress = (progress: UploadProgress) => {
+    setUploadStatuses(prev => new Map(prev.set(progress.photoId, progress)));
+  };
+
+  const handleUploadCompleted = (photoId: string, gcsPath: string) => {
+    console.log(`Upload completed: ${photoId}`);
+    setUploadStatuses(prev => {
+      const newMap = new Map(prev);
+      newMap.set(photoId, { photoId, progress: 100, status: 'completed' });
+      return newMap;
+    });
+  };
+
+  const handleUploadFailed = (photoId: string, error: string) => {
+    console.error(`Upload failed: ${photoId} - ${error}`);
+    setUploadStatuses(prev => {
+      const newMap = new Map(prev);
+      newMap.set(photoId, { photoId, progress: 0, status: 'failed', error });
+      return newMap;
+    });
+  };
+
+  // WebSocket event handlers
+  const handlePhotoCaptureConfirmed = (event: PhotoCaptureEvent) => {
+    console.log('UploadScreen: Photo capture confirmed via WebSocket:', event);
+    // Update UI to show confirmation
+  };
+
+  const handleUploadNotification = (data: any) => {
+    console.log('UploadScreen: Upload notification via WebSocket:', data);
+    // Handle upload notifications from server
+  };
+
+  const handleWebSocketUploadProgress = (data: any) => {
+    console.log('UploadScreen: Upload progress via WebSocket:', data);
+    // Update upload progress from server
+  };
+
+  const handleWebSocketUploadCompleted = (data: any) => {
+    console.log('UploadScreen: Upload completed via WebSocket:', data);
+    // Handle upload completion from server
+  };
+
+  const handleWebSocketUploadFailed = (data: any) => {
+    console.log('UploadScreen: Upload failed via WebSocket:', data);
+    // Handle upload failure from server
+  };
+
+  const handleStartSession = async () => {
+    try {
+      console.log('UploadScreen: Starting new session...');
+      const session = await startSession();
+      
+      if (session) {
+        console.log('UploadScreen: Session started:', session.id);
+        setIsSessionActive(true);
+        
+        // Connect WebSocket if not already connected
+        if (token) {
+          console.log('UploadScreen: Connecting WebSocket...');
+          const connected = await websocketService.connect(token);
+          if (connected) {
+            console.log('UploadScreen: WebSocket connected successfully');
+          } else {
+            console.log('UploadScreen: WebSocket connection failed');
+          }
+        }
+        
+        // Check if camera ref is available
+        if (cameraRef.current) {
+          console.log('UploadScreen: Camera ref available, starting capture');
+          const started = await cameraService.startCapturing();
+          if (started) {
+            console.log('UploadScreen: Camera capture started');
+          } else {
+            console.log('UploadScreen: Failed to start camera capture');
+            Alert.alert('Error', 'Failed to start camera capture');
+          }
+        } else {
+          console.log('UploadScreen: Camera ref not available, cannot start capture');
+          Alert.alert('Error', 'Camera not ready. Please try again.');
+        }
+      }
+    } catch (error) {
+      console.error('UploadScreen: Failed to start session:', error);
+      Alert.alert('Error', 'Failed to start session. Please try again.');
+    }
+  };
+
+  const handleEndSession = async () => {
+    try {
+      if (currentSession) {
+        console.log('Ending session:', currentSession.id);
+        await endSession(currentSession.id);
+        setIsSessionActive(false);
+        cameraService.stopCapturing();
+        setCapturedPhotos([]);
+        setUploadStatuses(new Map());
+        console.log('Session ended');
+      }
+    } catch (error) {
+      console.error('Failed to end session:', error);
+      Alert.alert('Error', 'Failed to end session. Please try again.');
+    }
+  };
 
   const requestPermissions = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -218,23 +440,117 @@ export const UploadScreen: React.FC = () => {
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Photo Upload</Text>
+          <Text style={styles.title}>Driver Session</Text>
           <Text style={styles.subtitle}>
-            {currentSession ? 'Active Session' : 'No Active Session'}
+            {isSessionActive ? 'Session Active - Monitoring' : 'No Active Session'}
           </Text>
         </View>
 
-        {/* Upload Actions */}
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity style={styles.actionButton} onPress={pickImages}>
-            <Text style={styles.actionIcon}>📁</Text>
-            <Text style={styles.actionText}>Choose Photos</Text>
-          </TouchableOpacity>
+        {/* Session Status */}
+        <View style={styles.statusContainer}>
+          <View style={[styles.statusIndicator, { backgroundColor: isSessionActive ? '#10b981' : '#ef4444' }]}>
+            <Text style={styles.statusText}>
+              {isSessionActive ? '🟢 ACTIVE' : '🔴 INACTIVE'}
+            </Text>
+          </View>
+          
+          {isCapturing && (
+            <View style={styles.captureIndicator}>
+              <ActivityIndicator size="small" color="#2563eb" />
+              <Text style={styles.captureText}>Capturing photos every second...</Text>
+            </View>
+          )}
+        </View>
 
-          <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
-            <Text style={styles.actionIcon}>📸</Text>
-            <Text style={styles.actionText}>Take Photo</Text>
-          </TouchableOpacity>
+        {/* Session Actions */}
+        <View style={styles.actionsContainer}>
+          {!isSessionActive ? (
+            <TouchableOpacity 
+              style={[styles.primaryButton, sessionLoading && styles.buttonDisabled]} 
+              onPress={handleStartSession}
+              disabled={sessionLoading}
+            >
+              {sessionLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.buttonIcon}>🚗</Text>
+                  <Text style={styles.buttonText}>Start Session</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              style={[styles.dangerButton, sessionLoading && styles.buttonDisabled]} 
+              onPress={handleEndSession}
+              disabled={sessionLoading}
+            >
+              {sessionLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.buttonIcon}>⏹️</Text>
+                  <Text style={styles.buttonText}>End Session</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Camera Preview */}
+        {isSessionActive && (
+          <View style={styles.cameraContainer}>
+            <Text style={styles.cameraTitle}>Live Camera Feed</Text>
+            <View style={styles.cameraWrapper}>
+              <Camera
+                ref={cameraRef}
+                style={styles.camera}
+                type={Camera.Constants.Type.front}
+                ratio="16:9"
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Session Stats */}
+        {isSessionActive && (
+          <View style={styles.statsContainer}>
+            <Text style={styles.statsTitle}>Session Statistics</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{capturedPhotos.length}</Text>
+                <Text style={styles.statLabel}>Photos Captured</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {Array.from(uploadStatuses.values()).filter(s => s.status === 'completed').length}
+                </Text>
+                <Text style={styles.statLabel}>Uploaded</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {Array.from(uploadStatuses.values()).filter(s => s.status === 'failed').length}
+                </Text>
+                <Text style={styles.statLabel}>Failed</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Legacy Upload Actions (for testing) */}
+        <View style={styles.legacyContainer}>
+          <Text style={styles.legacyTitle}>Manual Upload (Testing)</Text>
+          <View style={styles.legacyActions}>
+            <TouchableOpacity style={styles.actionButton} onPress={pickImages}>
+              <Text style={styles.actionIcon}>📁</Text>
+              <Text style={styles.actionText}>Choose Photos</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
+              <Text style={styles.actionIcon}>📸</Text>
+              <Text style={styles.actionText}>Take Photo</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Selected Images */}
@@ -508,5 +824,128 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#92400e',
+  },
+  // New session styles
+  statusContainer: {
+    marginBottom: 20,
+  },
+  statusIndicator: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  captureIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  captureText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#2563eb',
+    fontWeight: '500',
+  },
+  primaryButton: {
+    backgroundColor: '#10b981',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  dangerButton: {
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  buttonIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  cameraContainer: {
+    marginBottom: 20,
+  },
+  cameraTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 10,
+  },
+  cameraWrapper: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#f1f5f9',
+  },
+  camera: {
+    width: '100%',
+    height: 200,
+  },
+  statsContainer: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  statsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 12,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2563eb',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+  },
+  legacyContainer: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+  },
+  legacyTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#64748b',
+    marginBottom: 12,
+  },
+  legacyActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
   },
 });

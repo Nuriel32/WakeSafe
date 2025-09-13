@@ -156,31 +156,22 @@ export const DashboardScreen: React.FC = () => {
     }
 
     try {
-      const success = await cameraService.startContinuousCapture(
-        sessionId,
-        userId,
-        handlePhotoCaptured,
-        handleCaptureError
-      );
-
-      if (success) {
-        setIsCapturing(true);
-        setPhotosCaptured(0);
-        photoUploadService.reset();
-        console.log('Continuous photo capture started');
-      } else {
-        Alert.alert('Error', 'Failed to start camera capture');
-      }
+      // Camera capture is handled in UploadScreen
+      // This function just sets up the session state
+      setIsCapturing(true);
+      setPhotosCaptured(0);
+      photoUploadService.reset();
+      console.log('Session started - camera capture will begin in UploadScreen');
     } catch (error) {
-      console.error('Error starting continuous capture:', error);
-      Alert.alert('Error', 'Failed to start camera capture');
+      console.error('Error starting session:', error);
+      Alert.alert('Error', 'Failed to start session');
     }
   };
 
   const stopContinuousCapture = () => {
-    cameraService.stopContinuousCapture();
+    // Camera capture is handled in UploadScreen
     setIsCapturing(false);
-    console.log('Continuous photo capture stopped');
+    console.log('Session stopped - camera capture will stop in UploadScreen');
   };
 
   const handlePhotoCaptured = async (photo: SessionPhotoData) => {

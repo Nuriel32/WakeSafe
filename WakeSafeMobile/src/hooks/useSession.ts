@@ -67,7 +67,7 @@ export const useSession = () => {
     setSessionState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions`, {
+      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions/start`, {
         method: 'POST',
         headers: getAuthHeaders(),
       });
