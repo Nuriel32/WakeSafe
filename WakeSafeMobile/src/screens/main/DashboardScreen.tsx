@@ -106,13 +106,26 @@ export const DashboardScreen: React.FC = () => {
       const session = await startSession();
       Alert.alert('Success', CONFIG.SUCCESS.SESSION_START);
       
-      // Start continuous photo capture
+      // Emit WebSocket events
       if (session && user && token) {
-        await startContinuousCapture(session._id, user.id);
-        // Emit WebSocket events
         websocketService.emitSessionStart(session._id);
         websocketService.emitContinuousCaptureStart(session._id);
       }
+      
+      // Navigate to UploadScreen to start camera capture
+      Alert.alert(
+        'Session Started', 
+        'Session started successfully! Navigate to Upload tab to start camera capture.',
+        [
+          {
+            text: 'Go to Upload',
+            onPress: () => {
+              // Navigation will be handled by the tab navigator
+              console.log('User should navigate to Upload tab');
+            }
+          }
+        ]
+      );
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to start session');
     }
