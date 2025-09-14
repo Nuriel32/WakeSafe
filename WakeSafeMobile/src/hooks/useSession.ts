@@ -104,13 +104,26 @@ export const useSession = () => {
     setSessionState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions/${sessionId}`, {
+      const url = `${CONFIG.API_BASE_URL}/sessions/${sessionId}`;
+      console.log('useSession.endSession -> Request', { url, sessionId });
+      const response = await fetch(url, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ status: 'ended' }),
       });
-
-      const data = await response.json();
+      console.log('useSession.endSession -> Response status', response.status);
+      let data: any = null;
+      try {
+        const text = await response.text();
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {
+          data = { raw: text };
+        }
+      } catch (e) {
+        console.log('useSession.endSession -> Failed to read response body', e);
+      }
+      console.log('useSession.endSession -> Response body', data);
 
       if (!response.ok) {
         throw new Error(data.message || 'Failed to end session');
@@ -130,6 +143,7 @@ export const useSession = () => {
         loading: false,
         error: error.message || CONFIG.ERRORS.NETWORK,
       }));
+      console.log('useSession.endSession -> Error', error?.message || error);
       throw error;
     }
   }, [token, getAuthHeaders]);
