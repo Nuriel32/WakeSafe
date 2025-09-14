@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, Camera } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '../../hooks/useSession';
 import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
@@ -180,29 +181,33 @@ export const UploadScreen: React.FC = () => {
   const handlePhotoCaptured = async (photo: PhotoCaptureResult) => {
     console.log(`UploadScreen: Photo captured: #${photo.sequenceNumber}`);
     setCapturedPhotos(prev => [...prev, photo]);
-
-    if (activeSessionId && token) {
-      try {
-        // Use stored session ID
-        const sessionId = activeSessionId;
-        
-        // Emit photo captured event via WebSocket
-        console.log(`UploadScreen: Emitting photo_captured via WebSocket for photo #${photo.sequenceNumber}`);
-        websocketService.emitPhotoCaptured({
-          sequenceNumber: photo.sequenceNumber,
-          timestamp: photo.timestamp,
-          sessionId: sessionId,
-        });
-
-        // Upload photo to GCS
-        console.log(`UploadScreen: Starting photo upload for photo #${photo.sequenceNumber}`);
-        await photoUploadService.uploadPhoto(photo, sessionId, token);
-      } catch (error) {
-        console.error('UploadScreen: Photo upload failed:', error);
+    try {
+      // Resolve session id immediately (avoid race with effect)
+      const sessionId = activeSessionId || currentSession?._id || (currentSession as any)?.id || null;
+      let authToken = token;
+      if (!authToken) {
+        authToken = await AsyncStorage.getItem(CONFIG.TOKEN_KEY);
       }
-    } else {
-      console.log('UploadScreen: No session or token available for photo upload');
-      console.log('UploadScreen: activeSessionId:', activeSessionId, 'token:', token ? 'present' : 'missing');
+
+      if (!sessionId || !authToken) {
+        console.log('UploadScreen: No session or token available for photo upload');
+        console.log('UploadScreen: resolved sessionId:', sessionId, 'token present:', !!authToken);
+        return;
+      }
+
+      // Emit photo captured event via WebSocket
+      console.log(`UploadScreen: Emitting photo_captured via WebSocket for photo #${photo.sequenceNumber}`);
+      websocketService.emitPhotoCaptured({
+        sequenceNumber: photo.sequenceNumber,
+        timestamp: photo.timestamp,
+        sessionId,
+      });
+
+      // Upload photo to GCS
+      console.log(`UploadScreen: Starting photo upload for photo #${photo.sequenceNumber}`);
+      await photoUploadService.uploadPhoto(photo, sessionId, authToken);
+    } catch (error) {
+      console.error('UploadScreen: Photo upload failed:', error);
     }
   };
 
@@ -277,7 +282,9 @@ export const UploadScreen: React.FC = () => {
       const session = await startSession();
       
       if (session) {
-        console.log('UploadScreen: Session started:', session.id);
+        const newSessionId = session._id || session.id;
+        console.log('UploadScreen: Session started:', newSessionId);
+        setActiveSessionId(newSessionId);
         setIsSessionActive(true);
         
         // Connect WebSocket if not already connected
