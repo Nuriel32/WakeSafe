@@ -9,7 +9,7 @@ const logger = require('./utils/logger');
 const connectMongo = require('./config/db');
 
 // ---- Config ----
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = Number(process.env.PORT) || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const CORS_ORIGIN = process.env.SOCKET_IO_ORIGIN || '*';
@@ -30,13 +30,16 @@ server.headersTimeout = 66_000;
 // Create Socket.IO server with proper configuration
 const io = new Server(server, {
   cors: { 
-    origin: CORS_ORIGIN, 
+    origin: true, // Allow all origins for development
     methods: ['GET', 'POST'],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ['Authorization', 'Content-Type']
   },
   path: '/socket.io',
   transports: ['websocket', 'polling'],
-  allowEIO3: true
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // ---- Lazy revocation check (non-blocking before Redis is ready) ----
@@ -48,8 +51,11 @@ io.use(async (socket, next) => {
     console.log('🔐 WebSocket authentication attempt');
     console.log('Handshake auth:', socket.handshake.auth);
     console.log('Handshake query:', socket.handshake.query);
+    console.log('Handshake headers:', socket.handshake.headers);
     
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    const token = socket.handshake.auth?.token || 
+                  socket.handshake.query?.token || 
+                  socket.handshake.headers?.authorization?.replace('Bearer ', '');
     
     if (!token) {
       console.log('❌ No token provided');
