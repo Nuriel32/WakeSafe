@@ -5,22 +5,33 @@ const logger = require('../utils/logger');
 let storage = null;
 let bucket = null;
 
-function checkGCSAvailability() {
-  if (!process.env.GCS_BUCKET) {
+function getBucketName() {
+  const name = (process.env.GCS_BUCKET || '').trim();
+  if (!name) {
     throw new Error('GCS_BUCKET environment variable is not set. GCS operations are disabled.');
   }
-  
+  return name;
+}
+
+function checkGCSAvailability() {
+  const bucketName = getBucketName();
+
   if (!storage) {
     try {
-      storage = new Storage();
-      bucket = storage.bucket(process.env.GCS_BUCKET);
-      logger.info('GCS Storage initialized successfully');
+      const keyFile = process.env.GCLOUD_KEY_FILE || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      const projectId = process.env.GCLOUD_PROJECT_ID;
+      const storageOpts = {};
+      if (keyFile) storageOpts.keyFilename = keyFile;
+      if (projectId) storageOpts.projectId = projectId;
+      storage = new Storage(storageOpts);
+      bucket = storage.bucket(bucketName);
+      logger.info(`GCS Storage initialized successfully (bucket: ${bucketName})`);
     } catch (error) {
       logger.error('Failed to initialize GCS Storage:', error);
       throw error;
     }
   }
-  
+
   return { storage, bucket };
 }
 
@@ -129,7 +140,7 @@ async function generatePresignedUploadUrl(fileName, contentType, expiresInMinute
     
     return url;
   } catch (error) {
-    logger.error('Failed to generate presigned upload URL:', error);
+    logger.error(`Failed to generate presigned upload URL for ${fileName}: ${error.message}`);
     throw error;
   }
 }

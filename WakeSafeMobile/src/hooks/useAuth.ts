@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext, createContext, PropsWithChildren } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config';
 import { User, LoginResponse, RegisterResponse } from '../types';
@@ -11,7 +11,18 @@ interface AuthState {
   error: string | null;
 }
 
-export const useAuth = () => {
+type AuthContextType = AuthState & {
+  login: (email: string, password: string) => Promise<any>;
+  register: (userData: any) => Promise<any>;
+  logout: () => Promise<void>;
+  clearError: () => void;
+  renderKey: number;
+  forceUpdate: () => void;
+};
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
     user: null,
@@ -268,13 +279,23 @@ export const useAuth = () => {
     }
   };
 
-  return {
+  const value: AuthContextType = {
     ...authState,
     login,
     register,
     logout,
     clearError,
-    renderKey, // Include renderKey to force re-renders
-    forceUpdate, // Include forceUpdate function
+    renderKey,
+    forceUpdate,
   };
+
+  return React.createElement(AuthContext.Provider, { value }, children as any);
+};
+
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return ctx;
 };

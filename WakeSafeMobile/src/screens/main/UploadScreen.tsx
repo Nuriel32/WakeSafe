@@ -35,6 +35,8 @@ export const UploadScreen: React.FC = () => {
   const [capturedPhotos, setCapturedPhotos] = useState<PhotoCaptureResult[]>([]);
   const [uploadStatuses, setUploadStatuses] = useState<Map<string, UploadProgress>>(new Map());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
   
   // Camera ref
   const cameraRef = useRef<CameraView>(null);
@@ -130,6 +132,16 @@ export const UploadScreen: React.FC = () => {
     }
   }, [cameraRef.current]);
 
+  // Keep refs in sync with latest session and token
+  useEffect(() => {
+    const id = activeSessionId || currentSession?._id || (currentSession as any)?.id || null;
+    activeSessionIdRef.current = id;
+  }, [activeSessionId, currentSession]);
+
+  useEffect(() => {
+    tokenRef.current = token || null;
+  }, [token]);
+
   // Check for existing session on mount and start camera if needed
   useEffect(() => {
     console.log('UploadScreen: Session effect triggered, currentSession:', currentSession);
@@ -182,9 +194,9 @@ export const UploadScreen: React.FC = () => {
     console.log(`UploadScreen: Photo captured: #${photo.sequenceNumber}`);
     setCapturedPhotos(prev => [...prev, photo]);
     try {
-      // Resolve session id immediately (avoid race with effect)
-      const sessionId = activeSessionId || currentSession?._id || (currentSession as any)?.id || null;
-      let authToken = token;
+      // Resolve latest sessionId/token via refs to avoid stale closures
+      let sessionId = activeSessionIdRef.current || currentSession?._id || (currentSession as any)?.id || null;
+      let authToken = tokenRef.current;
       if (!authToken) {
         authToken = await AsyncStorage.getItem(CONFIG.TOKEN_KEY);
       }
@@ -285,8 +297,12 @@ export const UploadScreen: React.FC = () => {
         const newSessionId = session._id || session.id;
         console.log('UploadScreen: Session started:', newSessionId);
         setActiveSessionId(newSessionId);
+        activeSessionIdRef.current = newSessionId;
         setIsSessionActive(true);
-        
+
+        // Ensure state is committed before starting capture
+        await new Promise(resolve => setTimeout(resolve, 300));
+
         // Connect WebSocket if not already connected
         if (token) {
           console.log('UploadScreen: Connecting WebSocket...');
@@ -298,8 +314,8 @@ export const UploadScreen: React.FC = () => {
           }
         }
         
-        // Check if camera ref is available
-        if (cameraRef.current) {
+        // Start capture only after sessionId is set and camera ready
+        if (cameraRef.current && newSessionId) {
           console.log('UploadScreen: Camera ref available, starting capture');
           const started = await cameraService.startCapturing();
           if (started) {
@@ -309,7 +325,7 @@ export const UploadScreen: React.FC = () => {
             Alert.alert('Error', 'Failed to start camera capture');
           }
         } else {
-          console.log('UploadScreen: Camera ref not available, cannot start capture');
+          console.log('UploadScreen: Camera ref not available or sessionId missing, cannot start capture');
           Alert.alert('Error', 'Camera not ready. Please try again.');
         }
       }

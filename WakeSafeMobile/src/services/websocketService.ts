@@ -67,6 +67,8 @@ class WebSocketService {
         
         this.socket = io(CONFIG.WS_URL, {
           auth: { token },
+          query: { token },
+          extraHeaders: { Authorization: `Bearer ${token}` },
           transports: ['websocket', 'polling'],
           timeout: 10000,
           reconnection: true,

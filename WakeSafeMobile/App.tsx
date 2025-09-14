@@ -15,7 +15,7 @@ import { GalleryScreen } from './src/screens/main/GalleryScreen';
 import { ProfileScreen } from './src/screens/main/ProfileScreen';
 
 // Hooks
-import { useAuth } from './src/hooks/useAuth';
+import { useAuth, AuthProvider } from './src/hooks/useAuth';
 
 // Types
 import { RootStackParamList, AuthStackParamList, MainTabParamList } from './src/types';
@@ -94,7 +94,7 @@ const MainNavigator = () => (
   </MainTab.Navigator>
 );
 
-export default function App() {
+function AppInner() {
   const { isAuthenticated, loading, user, token, renderKey, forceUpdate } = useAuth();
   
   // Force re-render state
@@ -142,11 +142,7 @@ export default function App() {
     <SafeAreaProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
-        <Stack.Navigator
-          screenOptions={{
-            headerShown: false,
-          }}
-        >
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
           {appState.isAuthenticated ? (
             <Stack.Screen name="Main" component={MainNavigator} />
           ) : (
@@ -155,6 +151,14 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }
 
