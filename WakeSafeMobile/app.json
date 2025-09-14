@@ -45,6 +45,9 @@
           "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for video recording."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "ENV": "development"
+    }
   }
 }

@@ -1,5 +1,6 @@
 // Environment configuration for WakeSafe Mobile App
 // This file helps manage different environments (local, staging, production)
+import Constants from 'expo-constants';
 
 export type Environment = 'development' | 'local' | 'staging' | 'production';
 
@@ -83,8 +84,16 @@ const environments: Record<Environment, EnvironmentConfig> = {
 
 // Get current environment
 export const getCurrentEnvironment = (): Environment => {
-  // Force environment: local
-  return 'local';
+  // Read ENV from Expo extra or public env. Fallback to 'development'.
+  try {
+    const envFromExtra = (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.ENV)
+      || (process.env.EXPO_PUBLIC_ENV as string | undefined);
+    const env = (envFromExtra || 'development') as Environment;
+    if (['development', 'local', 'staging', 'production'].includes(env)) {
+      return env as Environment;
+    }
+  } catch {}
+  return 'development';
 };
 
 // Get environment configuration
@@ -95,7 +104,7 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
 
 // Helper to check if running locally
 export const isLocalDevelopment = (): boolean => {
-  return getCurrentEnvironment() === 'development';
+  return getCurrentEnvironment() === 'local';
 };
 
 // Helper to get API base URL

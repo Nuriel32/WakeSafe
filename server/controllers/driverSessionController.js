@@ -77,16 +77,25 @@ exports.endSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const userId = req.user.id;
+    console.log('[endSession] incoming', { sessionId, userId, body: req.body });
     
     const session = await DriverSession.findOne({ _id: sessionId, userId });
     
     if (!session) {
+      console.log('[endSession] session not found or not owned by user');
       return res.status(404).json({ message: 'Session not found' });
     }
     
-    session.isActive = false;
-    session.endTime = new Date();
-    await session.save();
+    try {
+      // Prefer model method to keep fields consistent
+      await session.endSession();
+    } catch (e) {
+      // Fallback minimal fields
+      session.isActive = false;
+      session.endTime = new Date();
+      session.status = 'ended';
+      await session.save();
+    }
     
     // Remove from cache
     await cache.del(`active_session:${userId}`);
