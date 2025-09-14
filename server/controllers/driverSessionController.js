@@ -86,6 +86,12 @@ exports.endSession = async (req, res) => {
       return res.status(404).json({ message: 'Session not found' });
     }
     
+    // Backfill legacy sessions that might be missing required sessionId
+    if (!session.sessionId) {
+      session.sessionId = `session_${userId}_${session._id}_${Date.now()}`;
+      console.log('[endSession] Backfilled missing sessionId for legacy session', { backfilledSessionId: session.sessionId });
+    }
+
     try {
       // Prefer model method to keep fields consistent
       await session.endSession();
