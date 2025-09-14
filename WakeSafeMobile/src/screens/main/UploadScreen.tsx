@@ -167,7 +167,8 @@ export const UploadScreen: React.FC = () => {
           await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
           
           if (cameraRef.current) {
-            console.log('UploadScreen: Camera ref available after delay, starting capture');
+            console.log('UploadScreen: Camera ref available after delay, setting 5s interval and starting capture');
+            cameraService.setConfig({ intervalMs: 5000 });
             const started = await cameraService.startCapturing();
             if (started) {
               console.log('UploadScreen: Camera capture started for existing session');
@@ -316,7 +317,8 @@ export const UploadScreen: React.FC = () => {
         
         // Start capture only after sessionId is set and camera ready
         if (cameraRef.current && newSessionId) {
-          console.log('UploadScreen: Camera ref available, starting capture');
+          console.log('UploadScreen: Camera ref available, setting 5s interval and starting capture');
+          cameraService.setConfig({ intervalMs: 5000 });
           const started = await cameraService.startCapturing();
           if (started) {
             console.log('UploadScreen: Camera capture started');
