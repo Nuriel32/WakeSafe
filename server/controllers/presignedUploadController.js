@@ -3,6 +3,10 @@ const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const logger = require('../utils/logger');
 
+function safeJsonParse(str) {
+    try { return JSON.parse(str); } catch { return null; }
+}
+
 /**
  * Generate presigned URL for direct client upload to GCS
  * @route POST /api/upload/presigned
@@ -12,11 +16,17 @@ async function generatePresignedUrl(req, res) {
     try {
         const { fileName, sessionId, sequenceNumber, timestamp, location, clientMeta } = req.body;
         const userId = req.user.id;
-        const session = req.session;
 
         if (!fileName || !sessionId) {
             logger.warn(`Presigned URL request missing fileName or sessionId. User: ${userId}`);
             return res.status(400).json({ error: 'Missing fileName or sessionId' });
+        }
+
+        // Validate and load session owned by user
+        const session = await DriverSession.findOne({ _id: sessionId, userId });
+        if (!session) {
+            logger.warn(`Presigned URL request for non-existent or unauthorized session. User: ${userId}, sessionId: ${sessionId}`);
+            return res.status(404).json({ error: 'Session not found' });
         }
 
         // Validate file extension
@@ -42,19 +52,24 @@ async function generatePresignedUrl(req, res) {
         console.log(`✅ Presigned URL generated successfully`);
         console.log(`🔗 Presigned URL: ${presignedUrl.substring(0, 100)}...`);
         
-        // Create upload info object
+        // Normalize metadata
+        const seqNum = sequenceNumber !== undefined && sequenceNumber !== null ? parseInt(sequenceNumber) : null;
+        const captureTs = timestamp !== undefined && timestamp !== null ? parseInt(timestamp) : Date.now();
+        const parsedLocation = typeof location === 'string' ? safeJsonParse(location) : location;
+        const parsedClientMeta = typeof clientMeta === 'string' ? safeJsonParse(clientMeta) : clientMeta;
+
+        // Build response info
         const uploadInfo = {
             presignedUrl,
-            photoId: `photo_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
             gcsPath,
             fileName,
             contentType,
             uploadInfo: {
-                sequenceNumber: sequenceNumber ? parseInt(sequenceNumber) : null,
-                captureTimestamp: timestamp ? parseInt(timestamp) : Date.now(),
+                sequenceNumber: seqNum,
+                captureTimestamp: captureTs,
                 folderType: 'before-ai'
             },
-            expiresIn: 60
+            expiresIn: 3600
         };
         
         console.log(`📦 Upload info created:`, {
@@ -68,37 +83,38 @@ async function generatePresignedUrl(req, res) {
         const photo = await Photo.create({
             sessionId,
             userId,
-            gcsPath: uploadInfo.gcsPath,
-            name: uploadInfo.fileName,
-            sequenceNumber: uploadInfo.metadata.sequenceNumber,
-            captureTimestamp: uploadInfo.metadata.captureTimestamp,
+            gcsPath,
+            fileName,
+            contentType,
+            sequenceNumber: seqNum ?? 0,
+            captureTimestamp: captureTs,
             folderType: 'before-ai',
-            location: uploadInfo.metadata.location,
-            clientMeta: uploadInfo.metadata.clientMeta,
+            location: parsedLocation || undefined,
+            clientMeta: parsedClientMeta || undefined,
             prediction: 'pending',
             aiProcessingStatus: 'pending',
             uploadStatus: 'pending'
         });
 
         // Update session statistics
-        session.totalImagesUploaded += 1;
-        session.photos.push(photo._id);
+        session.totalImagesUploaded = (session.totalImagesUploaded || 0) + 1;
+        if (Array.isArray(session.photos)) {
+            session.photos.push(photo._id);
+        } else {
+            session.photos = [photo._id];
+        }
         await session.save();
 
         logger.info(`Presigned URL generated for user ${userId}, session ${sessionId}. Photo ID: ${photo._id}, GCS Path: ${uploadInfo.gcsPath}`);
 
         const responseData = {
-            presignedUrl: uploadInfo.presignedUrl,
+            presignedUrl,
             photoId: photo._id,
-            gcsPath: uploadInfo.gcsPath,
-            fileName: uploadInfo.fileName,
-            contentType: uploadInfo.contentType,
-            expiresIn: 3600, // 1 hour
-            uploadInfo: {
-                sequenceNumber: uploadInfo.uploadInfo.sequenceNumber,
-                captureTimestamp: uploadInfo.uploadInfo.captureTimestamp,
-                folderType: uploadInfo.uploadInfo.folderType
-            }
+            gcsPath,
+            fileName,
+            contentType,
+            expiresIn: 3600,
+            uploadInfo: uploadInfo.uploadInfo
         };
 
         console.log(`📤 Sending presigned URL response to client:`, {
