@@ -24,7 +24,7 @@ class CameraService {
   private sequenceNumber = 0;
   private config: CameraServiceConfig = {
     quality: 0.8,
-    intervalMs: 1000, // 1 second
+    intervalMs: 5000, // 5 seconds
     maxWidth: 1920,
     maxHeight: 1080,
   };
