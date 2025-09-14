@@ -5,25 +5,40 @@ const logger = require('../utils/logger');
 exports.createSession = async (req, res) => {
   try {
     const userId = req.user.id;
+    console.log('Creating session for user:', userId);
 
     // Generate a unique session ID
     const sessionId = `session_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    console.log('Generated sessionId:', sessionId);
+    
     const session = await DriverSession.create({ 
       userId,
-      sessionId: sessionId
+      sessionId: sessionId,
+      status: 'active',
+      isActive: true,
+      startTime: new Date(),
+      sessionConfig: {
+        captureInterval: 1000,
+        uploadBatchSize: 1,
+        aiProcessingEnabled: true,
+        locationTrackingEnabled: true,
+        websocketEnabled: true
+      }
     });
+
+    console.log('Session created successfully:', session._id);
 
     // Use existing cache functions
     await cache.set(`active_session:${userId}`, session._id.toString(), 7200);
 
     logger.info(`From driverSessionController: Cached session in Redis: session:${session._id} -> userId ${userId}`);
 
-    res.status(201).json({ sessionId: session._id });
+    res.status(201).json(session);
   } catch (error) {
     console.error('Create session error:', error);
     logger.error('From driverSessionController: Failed to create driver session:', error);
-    res.status(500).json({ message: 'Could not create session' });
+    res.status(500).json({ message: 'Could not create session', error: error.message });
   }
 };
 
