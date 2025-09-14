@@ -29,7 +29,18 @@ async function generatePresignedUrl(req, res) {
         // Generate presigned URL
         const contentType = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
         const gcsPath = `sessions/${sessionId}/photos/${fileName}`;
+        
+        console.log(`🔗 Generating presigned URL for: ${fileName}`);
+        console.log(`📁 GCS Path: ${gcsPath}`);
+        console.log(`📋 Content Type: ${contentType}`);
+        console.log(`👤 User ID: ${userId}`);
+        console.log(`📸 Session ID: ${sessionId}`);
+        console.log(`🔢 Sequence Number: ${sequenceNumber}`);
+        
         const presignedUrl = await generatePresignedUploadUrl(gcsPath, contentType, 60);
+        
+        console.log(`✅ Presigned URL generated successfully`);
+        console.log(`🔗 Presigned URL: ${presignedUrl.substring(0, 100)}...`);
         
         // Create upload info object
         const uploadInfo = {
@@ -45,6 +56,13 @@ async function generatePresignedUrl(req, res) {
             },
             expiresIn: 60
         };
+        
+        console.log(`📦 Upload info created:`, {
+            photoId: uploadInfo.photoId,
+            fileName: uploadInfo.fileName,
+            gcsPath: uploadInfo.gcsPath,
+            sequenceNumber: uploadInfo.uploadInfo.sequenceNumber
+        });
 
         // Create photo document with pending status
         const photo = await Photo.create({
@@ -69,7 +87,7 @@ async function generatePresignedUrl(req, res) {
 
         logger.info(`Presigned URL generated for user ${userId}, session ${sessionId}. Photo ID: ${photo._id}, GCS Path: ${uploadInfo.gcsPath}`);
 
-        res.json({
+        const responseData = {
             presignedUrl: uploadInfo.presignedUrl,
             photoId: photo._id,
             gcsPath: uploadInfo.gcsPath,
@@ -77,11 +95,21 @@ async function generatePresignedUrl(req, res) {
             contentType: uploadInfo.contentType,
             expiresIn: 3600, // 1 hour
             uploadInfo: {
-                sequenceNumber: uploadInfo.metadata.sequenceNumber,
-                captureTimestamp: uploadInfo.metadata.captureTimestamp,
-                folderType: uploadInfo.metadata.folderType
+                sequenceNumber: uploadInfo.uploadInfo.sequenceNumber,
+                captureTimestamp: uploadInfo.uploadInfo.captureTimestamp,
+                folderType: uploadInfo.uploadInfo.folderType
             }
+        };
+
+        console.log(`📤 Sending presigned URL response to client:`, {
+            photoId: responseData.photoId,
+            fileName: responseData.fileName,
+            gcsPath: responseData.gcsPath,
+            expiresIn: responseData.expiresIn,
+            sequenceNumber: responseData.uploadInfo.sequenceNumber
         });
+
+        res.json(responseData);
 
     } catch (err) {
         logger.error(`Presigned URL generation failed for user ${req.user?.id}: ${err.message}`);
@@ -99,6 +127,12 @@ async function confirmUpload(req, res) {
         const { photoId, uploadSuccess } = req.body;
         const userId = req.user.id;
 
+        console.log(`📥 Received upload confirmation:`, {
+            photoId,
+            uploadSuccess,
+            userId
+        });
+
         if (!photoId) {
             return res.status(400).json({ error: 'Missing photoId' });
         }
@@ -106,8 +140,16 @@ async function confirmUpload(req, res) {
         // Find the photo
         const photo = await Photo.findOne({ _id: photoId, userId });
         if (!photo) {
+            console.log(`❌ Photo not found: ${photoId} for user ${userId}`);
             return res.status(404).json({ error: 'Photo not found' });
         }
+
+        console.log(`📸 Found photo:`, {
+            photoId: photo._id,
+            fileName: photo.name,
+            gcsPath: photo.gcsPath,
+            uploadStatus: photo.uploadStatus
+        });
 
         if (uploadSuccess) {
             // Update photo status to uploaded

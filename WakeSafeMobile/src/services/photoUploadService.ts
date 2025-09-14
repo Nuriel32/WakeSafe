@@ -8,7 +8,7 @@ export interface PresignedUrlResponse {
   fileName: string;
   contentType: string;
   uploadInfo: {
-    sequenceNumber: number;
+  sequenceNumber: number;
     captureTimestamp: number;
     folderType: string;
   };
@@ -92,6 +92,15 @@ class PhotoUploadService {
     token?: string
   ): Promise<PresignedUrlResponse> {
     try {
+      console.log(`📡 Requesting presigned URL for photo #${sequenceNumber}:`, {
+        fileName,
+        sessionId,
+        sequenceNumber,
+        timestamp,
+        hasLocation: !!location,
+        hasToken: !!token
+      });
+
       const response = await fetch(`${CONFIG.API_BASE_URL}/upload/presigned`, {
         method: 'POST',
         headers: {
@@ -112,12 +121,24 @@ class PhotoUploadService {
         }),
       });
 
+      console.log(`📡 Presigned URL response status: ${response.status}`);
+
       if (!response.ok) {
         const errorData = await response.json();
+        console.error(`❌ Presigned URL request failed:`, errorData);
         throw new Error(errorData.error || 'Failed to get presigned URL');
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log(`✅ Received presigned URL for photo #${sequenceNumber}:`, {
+        photoId: data.photoId,
+        fileName: data.fileName,
+        gcsPath: data.gcsPath,
+        expiresIn: data.expiresIn,
+        hasPresignedUrl: !!data.presignedUrl
+      });
+      
+      return data;
     } catch (error) {
       console.error('Presigned URL request failed:', error);
       throw error;
@@ -130,15 +151,25 @@ class PhotoUploadService {
     sequenceNumber: number
   ): Promise<void> {
     try {
+      console.log(`🚀 Starting GCS upload for photo #${sequenceNumber}:`, {
+        photoUri: photoUri.substring(0, 50) + '...',
+        gcsPath: presignedData.gcsPath,
+        contentType: presignedData.contentType,
+        presignedUrl: presignedData.presignedUrl.substring(0, 100) + '...'
+      });
+
       // Create abort controller for this upload
       const abortController = new AbortController();
       this.activeUploads.set(sequenceNumber.toString(), abortController);
 
       // Read photo as blob
+      console.log(`📖 Reading photo file as blob...`);
       const response = await fetch(photoUri);
       const blob = await response.blob();
+      console.log(`📦 Photo blob size: ${blob.size} bytes`);
 
       // Upload to GCS
+      console.log(`☁️ Uploading to GCS...`);
       const uploadResponse = await fetch(presignedData.presignedUrl, {
         method: 'PUT',
         body: blob,
@@ -148,11 +179,19 @@ class PhotoUploadService {
         signal: abortController.signal,
       });
 
+      console.log(`☁️ GCS upload response status: ${uploadResponse.status}`);
+
       if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error(`❌ GCS upload failed:`, {
+          status: uploadResponse.status,
+          statusText: uploadResponse.statusText,
+          error: errorText
+        });
         throw new Error(`GCS upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
       }
 
-      console.log(`Photo #${sequenceNumber} uploaded to GCS successfully`);
+      console.log(`✅ Photo #${sequenceNumber} uploaded to GCS successfully!`);
       this.activeUploads.delete(sequenceNumber.toString());
 
     } catch (error) {
@@ -167,25 +206,34 @@ class PhotoUploadService {
     token?: string
   ): Promise<void> {
     try {
+      console.log(`📤 Confirming upload to server:`, {
+        photoId,
+        success,
+        hasToken: !!token
+      });
+
       const response = await fetch(`${CONFIG.API_BASE_URL}/upload/confirm`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
           photoId,
           uploadSuccess: success,
         }),
       });
 
+      console.log(`📤 Upload confirmation response status: ${response.status}`);
+
       if (!response.ok) {
         const errorData = await response.json();
+        console.error(`❌ Upload confirmation failed:`, errorData);
         throw new Error(errorData.error || 'Failed to confirm upload');
       }
 
       const result = await response.json();
-      console.log('Upload confirmed:', result);
+      console.log(`✅ Upload confirmed successfully:`, result);
 
     } catch (error) {
       console.error('Upload confirmation failed:', error);
