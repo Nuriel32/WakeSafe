@@ -16,7 +16,7 @@ function generateToken(user, jti) {
     email: user.email,
     phone: user.phone,
     carNumber: user.carNumber
-  }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  }, process.env.JWT_SECRET, { expiresIn: '24h' });
 }
 
 /**
