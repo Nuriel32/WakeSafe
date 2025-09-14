@@ -83,8 +83,8 @@ const environments: Record<Environment, EnvironmentConfig> = {
 
 // Get current environment
 export const getCurrentEnvironment = (): Environment => {
-  // Force environment: development
-  return 'development';
+  // Force environment: local
+  return 'local';
 };
 
 // Get environment configuration
