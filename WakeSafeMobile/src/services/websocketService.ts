@@ -72,7 +72,9 @@ class WebSocketService {
           reconnection: true,
           reconnectionAttempts: this.maxReconnectAttempts,
           reconnectionDelay: this.reconnectDelay,
-          forceNew: true
+          forceNew: true,
+          upgrade: true,
+          rememberUpgrade: false
         });
 
         // Connection successful
@@ -92,8 +94,11 @@ class WebSocketService {
             message: error.message,
             description: error.description,
             context: error.context,
-            type: error.type
+            type: error.type,
+            stack: error.stack
           });
+          console.error('Connection URL:', CONFIG.WS_URL);
+          console.error('Token available:', !!token);
           this.isConnected = false;
           this.onConnectionChange?.(false);
           this.onError?.(`Connection failed: ${error.message}`);
