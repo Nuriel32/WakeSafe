@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     DEBUG: bool = False
+    # Optional service toggles
+    USE_DATABASE: bool = False
+    USE_REDIS: bool = False
     
     # WakeSafe API Configuration
     WAKESAFE_API_URL: str = "http://localhost:5000"
