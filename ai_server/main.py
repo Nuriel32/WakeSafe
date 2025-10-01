@@ -38,9 +38,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting WakeSafe AI Server...")
     
-    # Initialize services
-    await init_database()
-    await init_redis()
+    # Initialize optional services
+    if settings.USE_DATABASE:
+        await init_database()
+    else:
+        logger.info("ℹ️ Skipping database initialization (USE_DATABASE=False)")
+    
+    if settings.USE_REDIS:
+        await init_redis()
+    else:
+        logger.info("ℹ️ Skipping Redis initialization (USE_REDIS=False)")
     
     # Initialize AI models
     await app.state.fatigue_service.initialize_models()
@@ -51,8 +58,10 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Shutting down WakeSafe AI Server...")
-    await close_database()
-    await close_redis()
+    if settings.USE_DATABASE:
+        await close_database()
+    if settings.USE_REDIS:
+        await close_redis()
     logger.info("✅ WakeSafe AI Server shutdown complete!")
 
 
