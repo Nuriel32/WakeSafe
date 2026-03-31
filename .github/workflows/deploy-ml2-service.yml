@@ -1,0 +1,75 @@
+name: Deploy ML2 Service to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'ml2-service/**'
+      - '.github/workflows/deploy-ml2-service.yml'
+
+concurrency:
+  group: cloud-run-ml2-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-ml2-service:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ secrets.PROJECT_ID }}
+      REGION: ${{ secrets.GCP_REGION }}
+      RUN_NUMBER: ${{ github.run_number }}
+      SERVICE_DEPLOY: wakesafe-ml2-service
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Google Auth (Service Account JSON)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Set image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${PROJECT_ID:?PROJECT_ID is empty}"
+          : "${REGION:?GCP_REGION is empty}"
+          echo "IMAGE_URI=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-ml2-service:${RUN_NUMBER:-latest}" >> "$GITHUB_ENV"
+          echo "IMAGE_URI_LATEST=$REGION-docker.pkg.dev/$PROJECT_ID/wakesafe/wakesafe-ml2-service:latest" >> "$GITHUB_ENV"
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          docker build -f ml2-service/Dockerfile -t "${IMAGE_URI}" ml2-service
+          docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
+
+      - name: Push Docker image
+        run: |
+          docker push "${IMAGE_URI}"
+          docker push "${IMAGE_URI_LATEST}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${SERVICE_DEPLOY}" \
+            --project "${PROJECT_ID}" \
+            --image "${IMAGE_URI}" \
+            --region "${REGION}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 512Mi \
+            --cpu 1 \
+            --max-instances 10 \
+            --timeout 300 \
+            --quiet

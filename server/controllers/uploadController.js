@@ -1,4 +1,4 @@
-const { uploadFile, uploadSessionPhoto, generateSignedUrl } = require('../services/gcpStorageService.js');
+const { uploadFile, uploadSessionPhoto, generateSignedUrl, generatePresignedUploadUrl } = require('../services/gcpStorageService.js');
 const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const logger = require('../utils/logger');
@@ -17,11 +17,18 @@ async function uploadPhoto(req, res) {
         const { sessionId, location, clientMeta, sequenceNumber, timestamp, folderType } = req.body;
         const userId = req.user.id;
         const file = req.file;
-        const session = req.session;
+        const session = req.session || await DriverSession.findOne({
+            _id: sessionId,
+            userId,
+            isActive: true
+        });
 
         if (!file || !sessionId) {
             logger.warn(`From UploadController: Upload attempt missing file or sessionId. User: ${userId}`);
             return res.status(400).json({ error: 'Missing photo or sessionId' });
+        }
+        if (!session) {
+            return res.status(404).json({ error: 'Invalid or inactive session' });
         }
 
         // Determine folder type (before-ai or after-ai)
@@ -68,7 +75,9 @@ async function uploadPhoto(req, res) {
         const signedUrl = await generateSignedUrl(gcsPath, 3600); // 1 hour expiry
 
         // Queue photo for AI processing
-        aiProcessingService.queuePhotoForProcessing(photo, signedUrl);
+        aiProcessingService.queuePhotoForProcessing(photo, signedUrl).catch((error) => {
+            logger.error(`From UploadController: Queue processing failed for photo ${photo._id}: ${error.message}`);
+        });
 
         logger.info(`From UploadController: Photo uploaded by user ${userId} to session ${sessionId}. Photo ID: ${photo._id}, GCS Path: ${gcsPath}`);
         
@@ -102,11 +111,18 @@ async function getPresignedUrl(req, res) {
     try {
         const { fileName, sessionId, sequenceNumber, timestamp, location, clientMeta } = req.body;
         const userId = req.user.id;
-        const session = req.session;
+        const session = req.session || await DriverSession.findOne({
+            _id: sessionId,
+            userId,
+            isActive: true
+        });
 
         if (!fileName || !sessionId) {
             logger.warn(`From UploadController: Presigned URL request missing fileName or sessionId. User: ${userId}`);
             return res.status(400).json({ error: 'Missing fileName or sessionId' });
+        }
+        if (!session) {
+            return res.status(404).json({ error: 'Invalid or inactive session' });
         }
 
         // Validate file extension
@@ -188,13 +204,15 @@ async function confirmUpload(req, res) {
         }
 
         if (uploadSuccess) {
-            photo.uploadStatus = 'completed';
+            photo.uploadStatus = 'uploaded';
             
             // Generate signed URL for AI processing
             const signedUrl = await generateSignedUrl(photo.gcsPath, 3600);
             
             // Queue photo for AI processing
-            aiProcessingService.queuePhotoForProcessing(photo, signedUrl);
+            aiProcessingService.queuePhotoForProcessing(photo, signedUrl).catch((error) => {
+                logger.error(`From UploadController: Queue processing failed for photo ${photo._id}: ${error.message}`);
+            });
             
             logger.info(`From UploadController: Upload confirmed for photo ${photoId}, AI processing queued`);
             

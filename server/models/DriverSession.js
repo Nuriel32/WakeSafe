@@ -68,7 +68,7 @@ const driverSessionSchema = new mongoose.Schema({
   
   // Session Configuration
   sessionConfig: {
-    captureInterval: { type: Number, default: 1000 }, // milliseconds
+    captureInterval: { type: Number, default: 5000 }, // milliseconds
     uploadBatchSize: { type: Number, default: 1 },
     aiProcessingEnabled: { type: Boolean, default: true },
     locationTrackingEnabled: { type: Boolean, default: true },
