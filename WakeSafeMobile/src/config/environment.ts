@@ -99,7 +99,17 @@ export const getCurrentEnvironment = (): Environment => {
 // Get environment configuration
 export const getEnvironmentConfig = (): EnvironmentConfig => {
   const env = getCurrentEnvironment();
-  return environments[env];
+  const baseConfig = environments[env];
+
+  // Optional runtime overrides for Expo Go / EAS without code edits.
+  const apiOverride = process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined;
+  const wsOverride = process.env.EXPO_PUBLIC_WS_URL as string | undefined;
+
+  return {
+    ...baseConfig,
+    API_BASE_URL: apiOverride || baseConfig.API_BASE_URL,
+    WS_URL: wsOverride || baseConfig.WS_URL,
+  };
 };
 
 // Helper to check if running locally

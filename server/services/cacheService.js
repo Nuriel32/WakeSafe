@@ -207,6 +207,39 @@ async function incrementRateLimit(key, ttlSeconds = 60) {
   }
 }
 
+async function validateSessionOwner(sessionId, userId) {
+  try {
+    const client = getRedisClient();
+    if (client) {
+      const cachedOwner = await client.get(`session_owner:${sessionId}`);
+      if (cachedOwner) {
+        return cachedOwner === String(userId);
+      }
+    }
+
+    // Graceful fallback when Redis is unavailable or cache miss.
+    const DriverSession = require('../models/DriverSession');
+    const session = await DriverSession.findOne({
+      _id: sessionId,
+      userId,
+      isActive: true,
+    }).select('_id userId');
+
+    if (!session) {
+      return false;
+    }
+
+    if (client) {
+      await client.setEx(`session_owner:${sessionId}`, 3600, String(userId));
+    }
+
+    return true;
+  } catch (error) {
+    logger.error('Session ownership validation failed:', error);
+    return false;
+  }
+}
+
 module.exports = {
   set,
   get,
@@ -224,4 +257,5 @@ module.exports = {
   revokeToken,
   isTokenRevoked,
   incrementRateLimit,
+  validateSessionOwner,
 };

@@ -38,7 +38,7 @@ app.use(express.json());
 app.use(requestLogger);
 
 // Rate Limiters
-const { generalLimiter, authLimiter, uploadLimiter, apiLimiter } = require('./middlewares/rateLimit');
+const { generalLimiter, authLimiter, uploadLimiter, presignedUploadLimiter, apiLimiter } = require('./middlewares/rateLimit');
 
 // Debug endpoint to test rate limiting (before rate limiting)
 app.get('/api/debug/rate-limit', (req, res) => {
@@ -63,7 +63,7 @@ app.get('/api/debug/websocket', (req, res) => {
 // app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/upload', uploadLimiter, require('./routes/uploadRoutes'));
-app.use('/api/upload', uploadLimiter, require('./routes/presignedUploadRoutes'));
+app.use('/api/upload', presignedUploadLimiter, require('./routes/presignedUploadRoutes'));
 
 // Apply API rate limiting to other routes
 app.use('/api/users', apiLimiter, require('./routes/userRoutes'));

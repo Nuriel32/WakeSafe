@@ -19,7 +19,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
 import { cameraService, PhotoCaptureResult } from '../../services/cameraService';
 import { photoUploadService, UploadProgress } from '../../services/photoUploadService';
-import { websocketService, PhotoCaptureEvent } from '../../services/websocketService';
+import { websocketService, PhotoCaptureEvent, FatigueAlert } from '../../services/websocketService';
 
 export const UploadScreen: React.FC = () => {
   const { currentSession, startSession, endSession, loading: sessionLoading } = useSession();
@@ -69,7 +69,7 @@ export const UploadScreen: React.FC = () => {
   const requestCameraPermission = async () => {
     try {
       console.log('UploadScreen: Requesting camera permission...');
-      const { status } = await Camera.getCameraPermissionsAsync();
+      const { status } = await Camera.requestCameraPermissionsAsync();
       const granted = status === 'granted';
       console.log('UploadScreen: Camera permission request result:', { status, granted });
       setCameraPermission({ granted, status });
@@ -111,10 +111,12 @@ export const UploadScreen: React.FC = () => {
 
     // Set up WebSocket handlers
     websocketService.setOnPhotoCaptureConfirmed(handlePhotoCaptureConfirmed);
+    websocketService.setOnFatigueAlert(handleFatigueAlert);
     websocketService.setOnUploadNotification(handleUploadNotification);
     websocketService.setOnUploadProgress(handleWebSocketUploadProgress);
     websocketService.setOnUploadCompleted(handleWebSocketUploadCompleted);
     websocketService.setOnUploadFailed(handleWebSocketUploadFailed);
+    websocketService.setOnAIProcessingComplete(handleAIProcessingComplete);
 
     return () => {
       console.log('UploadScreen: Cleaning up camera service...');
@@ -164,7 +166,7 @@ export const UploadScreen: React.FC = () => {
           console.log('UploadScreen: Camera permissions already granted for existing session');
           
           // Wait a bit for camera to be ready, then start capture
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Warm-up delay before first capture
           
           if (cameraRef.current) {
             console.log('UploadScreen: Camera ref available after delay, setting 5s interval and starting capture');
@@ -249,6 +251,21 @@ export const UploadScreen: React.FC = () => {
       newMap.set(photoId, { photoId, progress: 0, status: 'failed', error });
       return newMap;
     });
+  };
+
+  const handleFatigueAlert = (alert: FatigueAlert) => {
+    console.log('UploadScreen: Fatigue alert via WebSocket:', alert);
+    if (alert.alert?.actionRequired) {
+      Alert.alert('Fatigue Alert', alert.alert.message);
+      return;
+    }
+    if (alert.alert?.severity === 'medium') {
+      Alert.alert('Drowsiness Detected', alert.alert.message);
+    }
+  };
+
+  const handleAIProcessingComplete = (data: any) => {
+    console.log('UploadScreen: AI processing complete via WebSocket:', data);
   };
 
   // WebSocket event handlers
@@ -403,7 +420,11 @@ export const UploadScreen: React.FC = () => {
   const takePhoto = async () => {
     try {
       console.log('Requesting camera permissions...');
-      const { status } = await Camera.getCameraPermissionsAsync();
+      let { status } = await Camera.getCameraPermissionsAsync();
+      if (status !== 'granted') {
+        const req = await Camera.requestCameraPermissionsAsync();
+        status = req.status;
+      }
       console.log('Camera permission status:', status);
       
       if (status !== 'granted') {
@@ -572,7 +593,7 @@ export const UploadScreen: React.FC = () => {
           {isCapturing && (
             <View style={styles.captureIndicator}>
               <ActivityIndicator size="small" color="#2563eb" />
-              <Text style={styles.captureText}>Capturing photos every second...</Text>
+              <Text style={styles.captureText}>Capturing photos every 5 seconds...</Text>
             </View>
           )}
         </View>

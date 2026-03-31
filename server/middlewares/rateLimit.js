@@ -14,6 +14,8 @@ function buildRateLimiter(opts = {}) {
     message = 'Too many requests, please try again later.',
     skipSuccessfulRequests = false,
     skipFailedRequests = false,
+    keyPrefix = 'global',
+    skip = undefined,
   } = opts;
 
   return rateLimit({
@@ -35,14 +37,19 @@ function buildRateLimiter(opts = {}) {
     },
     // Additional security: validate IP addresses
     validate: {
-      trustProxy: false, // Don't trust proxy headers for validation
-      xForwardedForHeader: false, // Don't use X-Forwarded-For for rate limiting
+      trustProxy: true,
+      xForwardedForHeader: true,
     },
-    // Use a more secure key generator
+    // Key by auth token when available (mobile user), fallback to IP.
     keyGenerator: (req) => {
-      // Use the direct connection IP, not forwarded headers
-      return req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
+      const authHeader = req.headers.authorization || '';
+      const authKey = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7, 35)
+        : '';
+      const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
+      return `${keyPrefix}:${authKey || ip}`;
     },
+    skip,
   });
 }
 
@@ -56,7 +63,18 @@ const authLimiter = buildRateLimiter({
 const uploadLimiter = buildRateLimiter({ 
   max: 10, 
   windowMs: 60 * 1000, // 1 minute
-  message: 'Too many upload attempts, please slow down.'
+  message: 'Too many upload attempts, please slow down.',
+  keyPrefix: 'upload',
+  // Presigned flow has its own dedicated limiter.
+  skip: (req) => req.path.startsWith('/presigned') || req.path.startsWith('/confirm') || req.path.startsWith('/status/')
+});
+
+// Presigned flow requires higher throughput for continuous capture.
+const presignedUploadLimiter = buildRateLimiter({
+  max: parseInt(process.env.PRESIGNED_UPLOAD_RATE_LIMIT_MAX || '120', 10),
+  windowMs: 60 * 1000,
+  message: 'Too many presigned upload requests, please slow down.',
+  keyPrefix: 'presigned-upload'
 });
 
 const apiLimiter = buildRateLimiter({ 
@@ -82,6 +100,7 @@ module.exports = {
   buildRateLimiter,
   authLimiter,
   uploadLimiter,
+  presignedUploadLimiter,
   apiLimiter,
   strictLimiter,
   generalLimiter,

@@ -1,0 +1,45 @@
+﻿{
+    "executed_at":  "2026-03-31T22:48:37.3945901+03:00",
+    "requests":  [
+                     {
+                         "image_url":  "https://images.pexels.com/photos/935743/pexels-photo-935743.jpeg",
+                         "response":  {
+                                          "image_id":  "sleep-photo-1",
+                                          "session_id":  "s-test",
+                                          "frame_analysis":  {
+                                                                 "eye_state":  "PARTIAL",
+                                                                 "confidence":  0.77,
+                                                                 "ear":  0.22,
+                                                                 "head_pose":  {
+                                                                                   "pitch":  4.5,
+                                                                                   "yaw":  -3.3,
+                                                                                   "roll":  -0.8
+                                                                               },
+                                                                 "processing_time_ms":  381,
+                                                                 "processed_at":  "2026-03-31T19:48:36.541431Z"
+                                                             },
+                                          "status":  "success"
+                                      }
+                     },
+                     {
+                         "image_url":  "https://images.pexels.com/photos/3771069/pexels-photo-3771069.jpeg",
+                         "response":  {
+                                          "image_id":  "sleep-photo-2",
+                                          "session_id":  "s-test",
+                                          "frame_analysis":  {
+                                                                 "eye_state":  "OPEN",
+                                                                 "confidence":  0.64,
+                                                                 "ear":  0.3,
+                                                                 "head_pose":  {
+                                                                                   "pitch":  1.8,
+                                                                                   "yaw":  -3.3,
+                                                                                   "roll":  1.6
+                                                                               },
+                                                                 "processing_time_ms":  834,
+                                                                 "processed_at":  "2026-03-31T19:48:37.386089Z"
+                                                             },
+                                          "status":  "success"
+                                      }
+                     }
+                 ]
+}

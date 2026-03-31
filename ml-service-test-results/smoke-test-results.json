@@ -1,0 +1,44 @@
+{
+  "executed_at": "2026-03-31T20:36:04.209119+00:00",
+  "ml1_health": {
+    "status": "ok",
+    "service": "ml1-service"
+  },
+  "ml2_health": {
+    "status": "ok",
+    "service": "ml2-service"
+  },
+  "ml1_predict": {
+    "image_id": "img-smoke-001",
+    "session_id": "s-smoke",
+    "frame_analysis": {
+      "eye_state": "PARTIAL",
+      "confidence": 0.77,
+      "ear": 0.22,
+      "head_pose": {
+        "pitch": 4.5,
+        "yaw": -3.3,
+        "roll": -0.8
+      },
+      "processing_time_ms": 588,
+      "processed_at": "2026-03-31T20:36:04.868729Z"
+    },
+    "status": "success"
+  },
+  "ml2_analyze": {
+    "user_id": "u-smoke",
+    "session_id": "s-smoke",
+    "driver_state": "drowsy",
+    "fatigued": true,
+    "severity": 0.975,
+    "features": {
+      "blink_rate": 0.0,
+      "avg_eye_closure_time": 2.0,
+      "max_eye_closure_time": 2.0,
+      "closed_eye_ratio": 0.6
+    },
+    "processing_time_ms": 0,
+    "processed_at": "2026-03-31T20:36:04.901228Z"
+  },
+  "status": "passed"
+}
