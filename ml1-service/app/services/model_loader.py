@@ -9,14 +9,25 @@ from app.core.config import settings
 class ModelProvider:
     name: str
 
-    def infer(self, image: Image.Image, feature_seed: int) -> dict:
+    def infer(self, image: Image.Image, features: dict) -> dict:
         """
         Deterministic placeholder for future MobileViT-v2 integration.
         """
-        eye_states = ["OPEN", "PARTIAL", "CLOSED", "UNKNOWN"]
-        eye_state = eye_states[feature_seed % len(eye_states)]
+        feature_seed = int(features.get("seed", 0))
+        mean_luma = float(features.get("eye_band_mean_luma", 0.0))
+        std_luma = float(features.get("eye_band_std_luma", 0.0))
 
-        base_confidence = 0.55 + ((feature_seed % 35) / 100)
+        if std_luma < 20 and mean_luma < 120:
+            eye_state = "CLOSED"
+        elif std_luma < 28:
+            eye_state = "PARTIAL"
+        elif std_luma >= 28:
+            eye_state = "OPEN"
+        else:
+            eye_state = "UNKNOWN"
+
+        texture_strength = min(std_luma / 40.0, 1.0)
+        base_confidence = 0.55 + (texture_strength * 0.35)
         confidence = min(max(base_confidence, 0.0), 1.0)
 
         ear_lookup = {

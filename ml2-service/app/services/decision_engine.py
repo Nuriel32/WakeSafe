@@ -18,9 +18,9 @@ class RuleBasedDecisionEngine:
         avg_closure = features.avg_eye_closure_time
         blink_rate = features.blink_rate
 
-        # Unknown when all features are effectively empty.
-        if closed_ratio == 0 and avg_closure == 0 and blink_rate == 0:
-            return DecisionResult(driver_state="unknown", fatigued=False, severity=0.0)
+        # With no closure signals, treat as alert rather than unknown.
+        if avg_closure == 0 and features.max_eye_closure_time == 0 and closed_ratio == 0 and blink_rate == 0:
+            return DecisionResult(driver_state="alert", fatigued=False, severity=0.05)
 
         sleeping_score = max(
             self._ratio(closed_ratio, settings.sleeping_closed_ratio_threshold),

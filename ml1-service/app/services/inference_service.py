@@ -20,8 +20,8 @@ class FrameInferenceService:
     def predict(self, payload: ML1PredictRequest) -> ML1PredictResponse:
         start = time.perf_counter()
         image = load_image(image_url=payload.image_url, image_base64=payload.image_base64)
-        preprocessed, feature_seed = self.preprocessor.preprocess(image)
-        model_out = self.model_provider.infer(preprocessed, feature_seed)
+        preprocessed, features = self.preprocessor.preprocess(image)
+        model_out = self.model_provider.infer(preprocessed, features)
         processing_time_ms = int((time.perf_counter() - start) * 1000)
 
         frame_analysis = FrameAnalysisResponse(
