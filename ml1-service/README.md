@@ -1,4 +1,5 @@
 # WakeSafe ML1 Service
+<!-- CI/CD smoke-change marker: ml1 -->
 
 `ml1-service` is a stateless FastAPI microservice for frame-level visual analysis (eye state, confidence, EAR, head pose). It does not produce final fatigue classes (`alert`, `drowsy`, `sleeping`); that is delegated to ML2.
 
