@@ -57,6 +57,29 @@ npm run env:staging --prefix WakeSafeMobile
 npm run env:production --prefix WakeSafeMobile
 ```
 
+## GCP Cost Control (Cloud Run)
+
+Use these scripts to quickly move your 3 services between active mode and low-cost idle mode:
+
+```bash
+# Show current scaling status
+npm run gcp:status
+
+# Active mode (keeps warm instances)
+npm run gcp:start
+
+# Low-cost idle mode (min instances = 0)
+npm run gcp:stop
+```
+
+Manual script usage:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\manage-gcp-services.ps1 status
+powershell -ExecutionPolicy Bypass -File .\scripts\manage-gcp-services.ps1 stop
+powershell -ExecutionPolicy Bypass -File .\scripts\manage-gcp-services.ps1 start
+```
+
 ## Project Structure
 
 See `docs/PROJECT_STRUCTURE.md` for architecture and folder conventions.
