@@ -1,4 +1,5 @@
 # WakeSafe ML2 Service
+<!-- CI/CD smoke-change marker: ml2 -->
 
 `ml2-service` is a stateless FastAPI microservice for temporal fatigue decisioning over a full sequence of ML1 frame outputs.
 
