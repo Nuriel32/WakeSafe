@@ -5,7 +5,7 @@ param(
 
   [string]$ProjectId = "wakesafe-470816",
   [string]$Region = "us-central1",
-  [string[]]$Services = @("wakesafe-api", "ml1-service", "ml2-service"),
+  [string[]]$Services = @("wakesafe-api", "wakesafe-ml1-service", "wakesafe-ml2-service"),
 
   [int]$StartMinInstances = 1,
   [int]$StartMaxInstances = 3,

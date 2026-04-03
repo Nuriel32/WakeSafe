@@ -3,10 +3,7 @@ name: Deploy Backend to Cloud Run
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'server/**'
-      - 'apps/backend/**'
-      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
 
 concurrency:
   group: cloud-run-backend-${{ github.ref_name }}
@@ -18,8 +15,8 @@ jobs:
 
     env:
       # Core project settings
-      PROJECT_ID: ${{ secrets.PROJECT_ID }}
-      REGION: ${{ secrets.GCP_REGION }}
+      PROJECT_ID: ${{ secrets.PROJECT_ID || 'wakesafe-470816' }}
+      REGION: ${{ secrets.GCP_REGION || 'us-central1' }}
       REPOSITORY: wakesafe
       RUN_NUMBER: ${{ github.run_number }}
 

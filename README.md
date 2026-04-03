@@ -80,6 +80,24 @@ powershell -ExecutionPolicy Bypass -File .\scripts\manage-gcp-services.ps1 stop
 powershell -ExecutionPolicy Bypass -File .\scripts\manage-gcp-services.ps1 start
 ```
 
+## CI/CD Deployment Behavior
+
+GitHub Actions deployment workflows now run on:
+- every push to `main`
+- manual trigger (`workflow_dispatch`)
+
+Workflows:
+- `.github/workflows/deploy-backend.yml` -> `wakesafe-api`
+- `.github/workflows/deploy-ml1-service.yml` -> `wakesafe-ml1-service`
+- `.github/workflows/deploy-ml2-service.yml` -> `wakesafe-ml2-service`
+
+Required repository secret:
+- `GCP_SA_KEY` (service account JSON with Cloud Run + Artifact Registry permissions)
+
+Optional secrets (fallback defaults are applied if not set):
+- `PROJECT_ID` (default `wakesafe-470816`)
+- `GCP_REGION` (default `us-central1`)
+
 ## Project Structure
 
 See `docs/PROJECT_STRUCTURE.md` for architecture and folder conventions.

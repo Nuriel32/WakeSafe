@@ -3,9 +3,7 @@ name: Deploy ML2 Service to Cloud Run
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'ml2-service/**'
-      - '.github/workflows/deploy-ml2-service.yml'
+  workflow_dispatch:
 
 concurrency:
   group: cloud-run-ml2-${{ github.ref_name }}
@@ -15,8 +13,8 @@ jobs:
   deploy-ml2-service:
     runs-on: ubuntu-latest
     env:
-      PROJECT_ID: ${{ secrets.PROJECT_ID }}
-      REGION: ${{ secrets.GCP_REGION }}
+      PROJECT_ID: ${{ secrets.PROJECT_ID || 'wakesafe-470816' }}
+      REGION: ${{ secrets.GCP_REGION || 'us-central1' }}
       RUN_NUMBER: ${{ github.run_number }}
       SERVICE_DEPLOY: wakesafe-ml2-service
 
