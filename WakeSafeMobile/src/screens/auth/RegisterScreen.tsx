@@ -1,19 +1,13 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
+import { Screen } from '../../components/ui/Screen';
+import { Card } from '../../components/ui/Card';
+import { InputField } from '../../components/ui/InputField';
+import { Button } from '../../components/ui/Button';
+import { colors, spacing, typography } from '../../theme/tokens';
+import { useToast } from '../../components/feedback/ToastProvider';
 
 interface RegisterScreenProps {
   navigation: any;
@@ -29,64 +23,37 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
     carNumber: '',
   });
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
   const { register } = useAuth();
+  const { showToast } = useToast();
 
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const isDisabled = useMemo(() => {
+    return Object.values(formData).some((value) => !value.trim()) || loading;
+  }, [formData, loading]);
+
   const validateInput = () => {
-    if (!formData.firstName.trim()) {
-      Alert.alert('Error', 'Please enter your first name');
-      return false;
+    const nextErrors: Record<string, string> = {};
+    if (!formData.firstName.trim()) nextErrors.firstName = 'First name is required';
+    if (!formData.lastName.trim()) nextErrors.lastName = 'Last name is required';
+    if (!formData.email.trim()) nextErrors.email = 'Email is required';
+    else if (!CONFIG.VALIDATION.EMAIL_REGEX.test(formData.email)) nextErrors.email = 'Enter a valid email address';
+    if (!formData.password.trim()) nextErrors.password = 'Password is required';
+    else if (formData.password.length < CONFIG.VALIDATION.PASSWORD_MIN_LENGTH) {
+      nextErrors.password = `Use at least ${CONFIG.VALIDATION.PASSWORD_MIN_LENGTH} characters`;
     }
+    if (!formData.phone.trim()) nextErrors.phone = 'Phone is required';
+    else if (!CONFIG.VALIDATION.PHONE_REGEX.test(formData.phone)) nextErrors.phone = 'Use 05XXXXXXXX format';
+    if (!formData.carNumber.trim()) nextErrors.carNumber = 'Car number is required';
+    else if (!CONFIG.VALIDATION.CAR_NUMBER_REGEX.test(formData.carNumber)) nextErrors.carNumber = 'Use 7-8 digits';
 
-    if (!formData.lastName.trim()) {
-      Alert.alert('Error', 'Please enter your last name');
-      return false;
-    }
-
-    if (!formData.email.trim()) {
-      Alert.alert('Error', 'Please enter your email address');
-      return false;
-    }
-
-    if (!CONFIG.VALIDATION.EMAIL_REGEX.test(formData.email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return false;
-    }
-
-    if (!formData.password.trim()) {
-      Alert.alert('Error', 'Please enter your password');
-      return false;
-    }
-
-    if (formData.password.length < CONFIG.VALIDATION.PASSWORD_MIN_LENGTH) {
-      Alert.alert('Error', `Password must be at least ${CONFIG.VALIDATION.PASSWORD_MIN_LENGTH} characters long`);
-      return false;
-    }
-
-    if (!formData.phone.trim()) {
-      Alert.alert('Error', 'Please enter your phone number');
-      return false;
-    }
-
-    if (!CONFIG.VALIDATION.PHONE_REGEX.test(formData.phone)) {
-      Alert.alert('Error', 'Please enter a valid Israeli phone number (05XXXXXXXX)');
-      return false;
-    }
-
-    if (!formData.carNumber.trim()) {
-      Alert.alert('Error', 'Please enter your car number');
-      return false;
-    }
-
-    if (!CONFIG.VALIDATION.CAR_NUMBER_REGEX.test(formData.carNumber)) {
-      Alert.alert('Error', 'Please enter a valid Israeli car number (7-8 digits)');
-      return false;
-    }
-
-    return true;
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleRegister = async () => {
@@ -94,244 +61,155 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
 
     setLoading(true);
     try {
-      console.log('Starting registration process...');
-      const result = await register(formData);
-      console.log('Registration successful:', result);
-      console.log('Auth state should now be updated');
-      // Navigation will be handled by the auth state change
+      await register(formData);
+      showToast('Account created successfully', 'success');
     } catch (error: any) {
-      console.error('Registration failed:', error);
-      Alert.alert('Registration Failed', error.message || CONFIG.ERRORS.VALIDATION);
+      showToast(error.message || CONFIG.ERRORS.VALIDATION, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidingView}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <View style={styles.header}>
-            <Text style={styles.logo}>👤</Text>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join WakeSafe for safer driving</Text>
+    <Screen>
+      <View style={styles.header}>
+        <Text style={styles.title}>Create account</Text>
+        <Text style={styles.subtitle}>Set up WakeSafe in under a minute</Text>
+      </View>
+
+      <Card style={styles.form}>
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <InputField
+              label="First name"
+              value={formData.firstName}
+              onChangeText={(value) => updateFormData('firstName', value)}
+              error={errors.firstName}
+              placeholder="Uriel"
+              autoCapitalize="words"
+              returnKeyType="next"
+              autoFocus
+              onSubmitEditing={() => emailRef.current?.focus()}
+              editable={!loading}
+            />
           </View>
-
-          <View style={styles.form}>
-            <View style={styles.row}>
-              <View style={[styles.inputContainer, styles.halfWidth]}>
-                <Text style={styles.label}>First Name</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.firstName}
-                  onChangeText={(value) => updateFormData('firstName', value)}
-                  placeholder="First name"
-                  placeholderTextColor="#999"
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  editable={!loading}
-                />
-              </View>
-
-              <View style={[styles.inputContainer, styles.halfWidth]}>
-                <Text style={styles.label}>Last Name</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.lastName}
-                  onChangeText={(value) => updateFormData('lastName', value)}
-                  placeholder="Last name"
-                  placeholderTextColor="#999"
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  editable={!loading}
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.email}
-                onChangeText={(value) => updateFormData('email', value)}
-                placeholder="Enter your email"
-                placeholderTextColor="#999"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.password}
-                onChangeText={(value) => updateFormData('password', value)}
-                placeholder="Enter your password"
-                placeholderTextColor="#999"
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Phone Number</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.phone}
-                onChangeText={(value) => updateFormData('phone', value)}
-                placeholder="05XXXXXXXX"
-                placeholderTextColor="#999"
-                keyboardType="phone-pad"
-                maxLength={10}
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Car Number</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.carNumber}
-                onChangeText={(value) => updateFormData('carNumber', value)}
-                placeholder="1234567"
-                placeholderTextColor="#999"
-                keyboardType="numeric"
-                maxLength={8}
-                editable={!loading}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleRegister}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Register</Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-                <Text style={styles.linkText}>Login</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.half}>
+            <InputField
+              label="Last name"
+              value={formData.lastName}
+              onChangeText={(value) => updateFormData('lastName', value)}
+              error={errors.lastName}
+              placeholder="Levi"
+              autoCapitalize="words"
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
+              editable={!loading}
+            />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+
+        <InputField
+          ref={emailRef}
+          label="Email"
+          value={formData.email}
+          onChangeText={(value) => updateFormData('email', value)}
+          error={errors.email}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          editable={!loading}
+        />
+
+        <InputField
+          ref={passwordRef}
+          label="Password"
+          value={formData.password}
+          onChangeText={(value) => updateFormData('password', value)}
+          error={errors.password}
+          placeholder={`At least ${CONFIG.VALIDATION.PASSWORD_MIN_LENGTH} characters`}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!loading}
+        />
+
+        <InputField
+          label="Phone"
+          value={formData.phone}
+          onChangeText={(value) => updateFormData('phone', value)}
+          error={errors.phone}
+          placeholder="05XXXXXXXX"
+          keyboardType="phone-pad"
+          maxLength={10}
+          editable={!loading}
+        />
+
+        <InputField
+          label="Car number"
+          value={formData.carNumber}
+          onChangeText={(value) => updateFormData('carNumber', value)}
+          error={errors.carNumber}
+          placeholder="1234567"
+          keyboardType="numeric"
+          maxLength={8}
+          editable={!loading}
+        />
+
+        <Button title="Create account" onPress={handleRegister} loading={loading} disabled={isDisabled} />
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Already have an account?</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.linkText}> Sign in</Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
-  },
-  logo: {
-    fontSize: 60,
-    marginBottom: 10,
+    marginBottom: spacing.lg,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontSize: typography.title,
+    fontWeight: '800',
+    color: colors.text,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#64748b',
+    fontSize: typography.body,
+    color: colors.textMuted,
     textAlign: 'center',
   },
   form: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: spacing.md,
   },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  halfWidth: {
-    width: '48%',
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 16,
-    backgroundColor: '#f8fafc',
-    color: '#1e293b',
-  },
-  button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 20,
-  },
-  buttonDisabled: {
-    backgroundColor: '#94a3b8',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  half: { flex: 1 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: spacing.md,
   },
   footerText: {
-    fontSize: 14,
-    color: '#64748b',
+    fontSize: typography.caption,
+    color: colors.textMuted,
   },
   linkText: {
-    fontSize: 14,
-    color: '#2563eb',
-    fontWeight: '600',
+    fontSize: typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
   },
 });

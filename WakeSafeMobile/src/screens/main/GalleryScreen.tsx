@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   Image,
-  TouchableOpacity,
-  Alert,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +12,10 @@ import { useSession } from '../../hooks/useSession';
 import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
 import { Photo } from '../../types';
+import { useToast } from '../../components/feedback/ToastProvider';
+import { EmptyState } from '../../components/feedback/EmptyState';
+import { Skeleton } from '../../components/feedback/Skeleton';
+import { colors } from '../../theme/tokens';
 
 export const GalleryScreen: React.FC = () => {
   const { currentSession } = useSession();
@@ -21,6 +23,7 @@ export const GalleryScreen: React.FC = () => {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { showToast } = useToast();
 
   const loadPhotos = async () => {
     if (!currentSession) {
@@ -41,13 +44,14 @@ export const GalleryScreen: React.FC = () => {
       );
 
       if (response.ok) {
-        const sessionPhotos = await response.json();
+        const payload = await response.json();
+        const sessionPhotos = Array.isArray(payload) ? payload : (payload?.photos || []);
         setPhotos(sessionPhotos);
       } else {
         throw new Error('Failed to load photos');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to load photos');
+      showToast(error.message || 'Failed to load photos', 'error');
     } finally {
       setLoading(false);
     }
@@ -111,7 +115,7 @@ export const GalleryScreen: React.FC = () => {
     }
   };
 
-  const renderPhotoItem = ({ item }: { item: Photo }) => (
+  const renderPhotoItem = useCallback(({ item }: { item: Photo }) => (
     <View style={styles.photoCard}>
       <View style={styles.photoContainer}>
         <Image
@@ -167,17 +171,28 @@ export const GalleryScreen: React.FC = () => {
         )}
       </View>
     </View>
-  );
+  ), []);
 
   const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>📸</Text>
-      <Text style={styles.emptyTitle}>No Photos Yet</Text>
-      <Text style={styles.emptyText}>
-        {currentSession
-          ? 'Start uploading photos to see them here'
-          : 'Start a session and upload photos to see them here'}
-      </Text>
+    <EmptyState
+      icon="📸"
+      title="No photos yet"
+      description={currentSession ? 'Start uploading photos to see them here.' : 'Start a session to begin.'}
+    />
+  );
+
+  const renderLoadingState = () => (
+    <View style={styles.skeletonGrid}>
+      {Array.from({ length: 6 }).map((_, index) => (
+        <View key={`skeleton-${index}`} style={styles.skeletonCard}>
+          <Skeleton height={150} radius={12} />
+          <View style={styles.skeletonContent}>
+            <Skeleton width="70%" />
+            <Skeleton width="45%" />
+            <Skeleton width="55%" height={12} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 
@@ -195,18 +210,24 @@ export const GalleryScreen: React.FC = () => {
       </View>
 
       {!currentSession ? (
-        <View style={styles.noSessionContainer}>
-          <Text style={styles.noSessionIcon}>🚗</Text>
-          <Text style={styles.noSessionTitle}>No Active Session</Text>
-          <Text style={styles.noSessionText}>
-            Start a session from the Dashboard to view and upload photos.
-          </Text>
-        </View>
+        <EmptyState
+          icon="🚗"
+          title="No active session"
+          description="Start a session from Dashboard to view uploaded photos."
+        />
       ) : (
+        loading ? (
+          renderLoadingState()
+        ) : (
         <FlatList
           data={photos}
           renderItem={renderPhotoItem}
           keyExtractor={(item) => item._id}
+          initialNumToRender={8}
+          windowSize={7}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
           numColumns={2}
           contentContainerStyle={styles.photoList}
           refreshControl={
@@ -215,6 +236,7 @@ export const GalleryScreen: React.FC = () => {
           ListEmptyComponent={renderEmptyState}
           showsVerticalScrollIndicator={false}
         />
+        )
       )}
     </SafeAreaView>
   );
@@ -223,7 +245,7 @@ export const GalleryScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.bg,
   },
   header: {
     padding: 20,
@@ -330,48 +352,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#64748b',
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  skeletonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 10,
   },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 20,
+  skeletonCard: {
+    width: '48%',
+    margin: '1%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingBottom: 10,
   },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 10,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  noSessionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  noSessionIcon: {
-    fontSize: 64,
-    marginBottom: 20,
-  },
-  noSessionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 10,
-  },
-  noSessionText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 20,
+  skeletonContent: {
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingTop: 10,
   },
 });

@@ -102,6 +102,17 @@ const userSchema = new mongoose.Schema({
     endDate: { type: Date },
     autoRenew: { type: Boolean, default: false }
   },
+
+  // Third-party integrations
+  spotify: {
+    isConnected: { type: Boolean, default: false },
+    spotifyUserId: { type: String },
+    accessToken: { type: String, select: false },
+    refreshToken: { type: String, select: false },
+    tokenExpiresAt: { type: Date, select: false },
+    connectedAt: { type: Date },
+    lastSyncAt: { type: Date }
+  },
   
   // Security and Access
   security: {

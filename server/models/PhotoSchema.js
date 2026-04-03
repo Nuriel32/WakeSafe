@@ -101,26 +101,33 @@ const photoSchema = new mongoose.Schema({
         data: { type: mongoose.Schema.Types.Mixed }
     }]
 }, { 
-    timestamps: true,
-    indexes: [
-        { userId: 1, sessionId: 1 },
-        { aiProcessingStatus: 1 },
-        { prediction: 1 },
-        { uploadedAt: -1 },
-        { sequenceNumber: 1 },
-        { folderType: 1 },
-        { captureTimestamp: -1 },
-        { uploadStatus: 1 },
-        { uploadMethod: 1 },
-        { processingQueuePosition: 1 },
-        { 'location.lat': 1, 'location.lng': 1 },
-        { 'clientMeta.deviceId': 1 },
-        { 'clientMeta.captureType': 1 },
-        { 'imageQuality.isValid': 1 },
-        { createdAt: -1 },
-        { updatedAt: -1 }
-    ]
+    timestamps: true
 });
+
+// High-frequency query indexes
+photoSchema.index({ userId: 1, sessionId: 1 });
+photoSchema.index({ sessionId: 1, uploadedAt: -1 });
+photoSchema.index({ sessionId: 1, prediction: 1, uploadedAt: -1 });
+photoSchema.index({ aiProcessingStatus: 1 });
+photoSchema.index({ aiProcessingStatus: 1, uploadedAt: 1 });
+photoSchema.index({ prediction: 1 });
+photoSchema.index({ uploadedAt: -1 });
+photoSchema.index({ sequenceNumber: 1 });
+photoSchema.index({ folderType: 1 });
+photoSchema.index({ captureTimestamp: -1 });
+photoSchema.index({ uploadStatus: 1 });
+photoSchema.index({ uploadMethod: 1 });
+photoSchema.index({ processingQueuePosition: 1 });
+photoSchema.index({ 'location.lat': 1, 'location.lng': 1 });
+photoSchema.index({ 'clientMeta.deviceId': 1 });
+photoSchema.index({ 'clientMeta.captureType': 1 });
+photoSchema.index({ 'imageQuality.isValid': 1 });
+photoSchema.index({ createdAt: -1 });
+photoSchema.index({ updatedAt: -1 });
+
+// Critical paths: latest photo by session/user and ordered frame processing.
+photoSchema.index({ sessionId: 1, userId: 1, captureTimestamp: -1, uploadedAt: -1 });
+photoSchema.index({ sessionId: 1, sequenceNumber: 1 }, { unique: true });
 
 // Virtual for full GCS URL
 photoSchema.virtual('gcsUrl').get(function() {

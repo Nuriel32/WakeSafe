@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './useAuth';
 import { CONFIG } from '../config';
 import { Session } from '../types';
@@ -10,7 +10,17 @@ interface SessionState {
   error: string | null;
 }
 
-export const useSession = () => {
+type SessionContextType = SessionState & {
+  startSession: () => Promise<any>;
+  endSession: (sessionId: string) => Promise<any>;
+  loadCurrentSession: () => Promise<void>;
+  loadSessionHistory: (opts?: { includePhotos?: boolean }) => Promise<void>;
+  clearError: () => void;
+};
+
+const SessionContext = createContext<SessionContextType | undefined>(undefined);
+
+export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const { token } = useAuth();
   const [sessionState, setSessionState] = useState<SessionState>({
     currentSession: null,
@@ -148,11 +158,12 @@ export const useSession = () => {
     }
   }, [token, getAuthHeaders]);
 
-  const loadSessionHistory = useCallback(async () => {
+  const loadSessionHistory = useCallback(async (opts?: { includePhotos?: boolean }) => {
     if (!token) return;
 
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions`, {
+      const includePhotos = opts?.includePhotos ? 'true' : 'false';
+      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions?includePhotos=${includePhotos}`, {
         headers: getAuthHeaders(),
       });
 
@@ -193,12 +204,29 @@ export const useSession = () => {
     }
   }, [token, loadCurrentSession, loadSessionHistory]);
 
-  return {
+  const value: SessionContextType = useMemo(() => ({
     ...sessionState,
     startSession,
     endSession,
     loadCurrentSession,
     loadSessionHistory,
     clearError,
-  };
+  }), [
+    sessionState,
+    startSession,
+    endSession,
+    loadCurrentSession,
+    loadSessionHistory,
+    clearError,
+  ]);
+
+  return React.createElement(SessionContext.Provider, { value }, children as any);
+};
+
+export const useSession = () => {
+  const ctx = useContext(SessionContext);
+  if (!ctx) {
+    throw new Error('useSession must be used within a SessionProvider');
+  }
+  return ctx;
 };

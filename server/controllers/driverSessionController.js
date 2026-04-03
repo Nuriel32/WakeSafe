@@ -1,8 +1,9 @@
 const DriverSession = require('../models/DriverSession');
 const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
+const HttpError = require('../utils/httpError');
 
-exports.createSession = async (req, res) => {
+exports.createSession = async (req, res, next) => {
   try {
     const userId = req.user.id;
     console.log('Creating session for user:', userId);
@@ -34,15 +35,15 @@ exports.createSession = async (req, res) => {
 
     logger.info(`From driverSessionController: Cached session in Redis: session:${session._id} -> userId ${userId}`);
 
-    res.status(201).json(session);
+    return res.success(session, { statusCode: 201, message: 'Session created successfully' });
   } catch (error) {
     console.error('Create session error:', error);
     logger.error('From driverSessionController: Failed to create driver session:', error);
-    res.status(500).json({ message: 'Could not create session', error: error.message });
+    return next(new HttpError(500, 'Could not create session', null, 'SESSION_CREATE_FAILED'));
   }
 };
 
-exports.getCurrentSession = async (req, res) => {
+exports.getCurrentSession = async (req, res, next) => {
   try {
     const userId = req.user.id;
     
@@ -52,7 +53,7 @@ exports.getCurrentSession = async (req, res) => {
     if (activeSessionId) {
       const session = await DriverSession.findById(activeSessionId);
       if (session && session.isActive) {
-        return res.json(session);
+        return res.success(session, { message: 'Current session retrieved' });
       }
     }
     
@@ -62,18 +63,18 @@ exports.getCurrentSession = async (req, res) => {
     if (session) {
       // Update cache
       await cache.set(`active_session:${userId}`, session._id.toString(), 7200);
-      return res.json(session);
+      return res.success(session, { message: 'Current session retrieved' });
     }
     
-    res.status(404).json({ message: 'No active session found' });
+    return next(new HttpError(404, 'No active session found', null, 'SESSION_NOT_FOUND'));
   } catch (error) {
     console.error('Get current session error:', error);
     logger.error('From driverSessionController: Failed to get current session:', error);
-    res.status(500).json({ message: 'Could not get current session' });
+    return next(new HttpError(500, 'Could not get current session', null, 'SESSION_FETCH_FAILED'));
   }
 };
 
-exports.endSession = async (req, res) => {
+exports.endSession = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
     const userId = req.user.id;
@@ -83,7 +84,7 @@ exports.endSession = async (req, res) => {
     
     if (!session) {
       console.log('[endSession] session not found or not owned by user');
-      return res.status(404).json({ message: 'Session not found' });
+      return next(new HttpError(404, 'Session not found', null, 'SESSION_NOT_FOUND'));
     }
     
     // Backfill legacy sessions that might be missing required sessionId
@@ -108,28 +109,47 @@ exports.endSession = async (req, res) => {
     
     logger.info(`From driverSessionController: Ended session ${sessionId} for user ${userId}`);
     
-    res.json({ message: 'Session ended successfully', session });
+    return res.success({ session }, { message: 'Session ended successfully' });
   } catch (error) {
     console.error('End session error:', error);
     logger.error('From driverSessionController: Failed to end session:', error);
-    res.status(500).json({ message: 'Could not end session' });
+    return next(new HttpError(500, 'Could not end session', null, 'SESSION_END_FAILED'));
   }
 };
 
-exports.getSessionHistory = async (req, res) => {
+exports.getSessionHistory = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { limit = 50, page = 1 } = req.query;
-    
-    const sessions = await DriverSession.find({ userId })
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+    const page = Math.max(parseInt(req.query.page || '1', 10), 1);
+    const includePhotos = String(req.query.includePhotos || 'false') === 'true';
+    const cacheKey = `session_history:${userId}:${page}:${limit}:${includePhotos}`;
+
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      return res.success(cached, { message: 'Session history retrieved (cached)' });
+    }
+
+    let query = DriverSession.find({ userId })
       .sort({ startTime: -1 })
-      .limit(parseInt(limit))
-      .skip((parseInt(page) - 1) * parseInt(limit))
-      .populate('photos', 'prediction aiProcessingStatus uploadedAt');
-    
-    res.json(sessions);
+      .limit(limit)
+      .skip((page - 1) * limit)
+      .select(
+        'sessionId startTime endTime duration isActive status totalImagesUploaded totalImagesProcessed aiProcessingStats uploadStats createdAt updatedAt'
+      );
+
+    if (includePhotos) {
+      query = query.populate('photos', 'prediction aiProcessingStatus uploadedAt');
+    }
+
+    const sessions = await query.lean();
+    await cache.set(cacheKey, sessions, 30);
+    return res.success(sessions, {
+      message: 'Session history retrieved',
+      meta: { page, limit, count: sessions.length, includePhotos },
+    });
   } catch (error) {
     logger.error('From driverSessionController: Failed to get session history:', error);
-    res.status(500).json({ message: 'Could not get session history' });
+    return next(new HttpError(500, 'Could not get session history', null, 'SESSION_HISTORY_FAILED'));
   }
 };

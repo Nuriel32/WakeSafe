@@ -7,12 +7,18 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const logger = require('./utils/logger');
 const connectMongo = require('./config/db');
+const monitoring = require('./services/monitoringService');
+const cache = require('./services/cacheService');
+const { randomUUID } = require('crypto');
 
 // ---- Config ----
 const PORT = Number(process.env.PORT) || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const CORS_ORIGIN = process.env.SOCKET_IO_ORIGIN || '*';
+const socketAllowedOrigins = CORS_ORIGIN === '*'
+  ? true
+  : CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean);
 
 // Redis local-in-container defaults (Dockerfile launches redis-server separately)
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
@@ -30,9 +36,9 @@ server.headersTimeout = 66_000;
 // Create Socket.IO server with proper configuration
 const io = new Server(server, {
   cors: { 
-    origin: true, // Allow all origins for development
+    origin: socketAllowedOrigins,
     methods: ['GET', 'POST'],
-    credentials: true,
+    credentials: false,
     allowedHeaders: ['Authorization', 'Content-Type']
   },
   path: '/socket.io',
@@ -41,6 +47,7 @@ const io = new Server(server, {
   pingTimeout: 60000,
   pingInterval: 25000
 });
+global.io = io;
 
 // ---- Lazy revocation check (non-blocking before Redis is ready) ----
 let isTokenRevoked = async (_jti) => false;
@@ -48,33 +55,25 @@ let isTokenRevoked = async (_jti) => false;
 // ---- Socket.IO Authentication Middleware ----
 io.use(async (socket, next) => {
   try {
-    console.log('🔐 WebSocket authentication attempt');
-    console.log('Handshake auth:', socket.handshake.auth);
-    console.log('Handshake query:', socket.handshake.query);
-    console.log('Handshake headers:', socket.handshake.headers);
-    
-    const token = socket.handshake.auth?.token || 
-                  socket.handshake.query?.token || 
-                  socket.handshake.headers?.authorization?.replace('Bearer ', '');
+    logger.info('WebSocket authentication attempt');
+    const token = socket.handshake.auth?.token;
     
     if (!token) {
-      console.log('❌ No token provided');
+      logger.warn('WebSocket auth failed: No token provided');
       return next(new Error('Authentication token required'));
     }
     
     if (!JWT_SECRET) {
-      console.log('❌ JWT_SECRET not configured');
+      logger.error('WebSocket auth failed: JWT_SECRET not configured');
       return next(new Error('Server JWT secret not configured'));
     }
 
-    console.log('🔍 Verifying JWT token...');
     let decoded;
     try {
-      decoded = jwt.verify(token, JWT_SECRET);
-      console.log('✅ JWT verified successfully');
-      console.log('Decoded payload:', { id: decoded.id, email: decoded.email });
+      decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+      logger.info(`WebSocket JWT verified for user ${decoded.id}`);
     } catch (jwtError) {
-      console.log('❌ JWT verification failed:', jwtError.message);
+      logger.warn(`WebSocket JWT verification failed: ${jwtError.message}`);
       return next(new Error('Invalid token'));
     }
 
@@ -83,7 +82,7 @@ io.use(async (socket, next) => {
     if (jti) {
       const revoked = await isTokenRevoked(jti);
       if (revoked) {
-        console.log('❌ Token has been revoked');
+        logger.warn(`WebSocket token revoked for user ${decoded.id}`);
         return next(new Error('Token has been revoked'));
       }
     }
@@ -93,10 +92,10 @@ io.use(async (socket, next) => {
     socket.userEmail = decoded.email;
     socket.jti = jti;
     
-    console.log('✅ WebSocket authentication successful for user:', decoded.email);
+    logger.info(`WebSocket authentication successful for user ${decoded.id}`);
     return next();
   } catch (err) {
-    console.log('❌ WebSocket authentication error:', err.message);
+    logger.error(`WebSocket authentication error: ${err.message}`);
     return next(new Error('Authentication failed'));
   }
 });
@@ -111,6 +110,8 @@ io.on('connection', (socket) => {
   // Join user-specific room
   const room = `user:${socket.userId}`;
   socket.join(room);
+  socket.join(`session:${socket.userId}`);
+  socket.data.lastHeartbeatAt = Date.now();
   console.log(`📡 User joined room: ${room}`);
 
   // Send welcome message
@@ -222,21 +223,75 @@ io.on('connection', (socket) => {
     socket.emit('pong', { timestamp: Date.now() });
   });
 
+  // ---- Application heartbeat ----
+  socket.on('heartbeat', (data = {}) => {
+    socket.data.lastHeartbeatAt = Date.now();
+    socket.emit('heartbeat_ack', {
+      timestamp: Date.now(),
+      clientTimestamp: data.timestamp || null,
+    });
+  });
+
   // ---- Disconnect Handler ----
   socket.on('disconnect', (reason) => {
     console.log(`👋 WebSocket client disconnected: ${socket.userId}, reason: ${reason}`);
+    monitoring.trackWarning('websocket_disconnect', {
+      requestId: null,
+      userId: socket.userId || null,
+      tripId: null,
+      socketId: socket.id,
+      reason,
+    }).catch(() => {});
   });
 
   // ---- Error Handler ----
   socket.on('error', (error) => {
     console.log(`💥 WebSocket error for user ${socket.userId}: ${error?.message || error}`);
+    monitoring.trackFailure('websocket_error', {
+      requestId: null,
+      userId: socket.userId || null,
+      tripId: null,
+      socketId: socket.id,
+      message: error?.message || String(error),
+    }).catch(() => {});
   });
 });
+
+const SOCKET_HEARTBEAT_STALE_MS = Number(process.env.SOCKET_HEARTBEAT_STALE_MS || 70000);
+const SOCKET_HEARTBEAT_SWEEP_MS = Number(process.env.SOCKET_HEARTBEAT_SWEEP_MS || 30000);
+const heartbeatSweep = setInterval(async () => {
+  try {
+    const sockets = await io.fetchSockets();
+    const now = Date.now();
+    for (const s of sockets) {
+      const last = Number(s.data?.lastHeartbeatAt || 0);
+      if (last > 0 && now - last > SOCKET_HEARTBEAT_STALE_MS) {
+        logger.warn(`Disconnecting stale socket userId=${s.userId} socketId=${s.id}`);
+        s.disconnect(true);
+      }
+    }
+  } catch (error) {
+    logger.warn(`Heartbeat sweep failed: ${error.message}`);
+  }
+}, SOCKET_HEARTBEAT_SWEEP_MS);
+heartbeatSweep.unref?.();
+
+async function emitToUserWithDedupe(userId, eventName, payload, ttlSeconds = 60) {
+  const room = `user:${userId}`;
+  const eventId = payload?.eventId || `${eventName}:${payload?.sessionId || 'na'}:${payload?.photoId || 'na'}:${payload?.timestamp || Date.now()}`;
+  const dedupeKey = `ws_emit:${eventName}:${userId}:${eventId}`;
+  const already = await cache.get(dedupeKey);
+  if (already) return false;
+  await cache.set(dedupeKey, '1', ttlSeconds);
+  io.to(room).emit(eventName, { ...payload, eventId });
+  return true;
+}
 
 // ---- Global broadcast helpers ----
 function broadcastFatigueDetection(userId, sessionId, fatigueLevel, confidence, photoId, aiResults) {
   console.log(`🚨 Broadcasting fatigue detection for user ${userId}: ${fatigueLevel}`);
-  io.to(`user:${userId}`).emit('fatigue_detection', {
+  emitToUserWithDedupe(userId, 'fatigue_detection', {
+    eventId: randomUUID(),
     sessionId,
     fatigueLevel,
     confidence,
@@ -249,7 +304,7 @@ function broadcastFatigueDetection(userId, sessionId, fatigueLevel, confidence, 
       message: getFatigueMessage(fatigueLevel, confidence),
       actionRequired: fatigueLevel === 'sleeping' || (fatigueLevel === 'drowsy' && confidence > 0.8),
     },
-  });
+  }, 120).catch(() => {});
 }
 
 function getFatigueMessage(fatigueLevel, confidence) {
@@ -264,22 +319,24 @@ function getFatigueMessage(fatigueLevel, confidence) {
 
 function broadcastAIProcessingComplete(userId, photoId, results, processingTime) {
   console.log(`🤖 Broadcasting AI processing complete for user ${userId}`);
-  io.to(`user:${userId}`).emit('ai_processing_complete', {
+  emitToUserWithDedupe(userId, 'ai_processing_complete', {
+    eventId: randomUUID(),
     photoId,
     results,
     processingTime,
     timestamp: Date.now(),
-  });
+  }, 30).catch(() => {});
 }
 
 function sendNotificationToUser(userId, message, type = 'info', duration = 5000) {
   console.log(`📢 Sending notification to user ${userId}: ${message}`);
-  io.to(`user:${userId}`).emit('notification', {
+  emitToUserWithDedupe(userId, 'notification', {
+    eventId: randomUUID(),
     message,
     type,
     duration,
     timestamp: Date.now(),
-  });
+  }, 15).catch(() => {});
 }
 
 // Make them globally available
@@ -345,6 +402,7 @@ async function connectRedis() {
     redisClient.on('error', (err) => console.error(`Redis error: ${err.message}`));
     await redisClient.connect();
     app.locals.redis = redisClient;
+    await initBackground();
     console.log(`✅ Redis connected at ${REDIS_HOST}:${REDIS_PORT}`);
   } catch (err) {
     console.error(`Redis connect failed (continuing): ${err.message}`);
@@ -359,6 +417,7 @@ process.on('uncaughtException', (e) => console.error(`uncaughtException: ${e?.me
 function shutdown(signal) {
   console.log(`Received ${signal}, shutting down...`);
   Promise.resolve()
+    .then(() => clearInterval(heartbeatSweep))
     .then(() => (redisClient ? redisClient.quit().catch(() => {}) : null))
     .then(() => new Promise((res) => server.close(() => res())))
     .then(() => {

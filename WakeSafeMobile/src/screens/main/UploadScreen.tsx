@@ -19,11 +19,15 @@ import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
 import { cameraService, PhotoCaptureResult } from '../../services/cameraService';
 import { photoUploadService, UploadProgress } from '../../services/photoUploadService';
-import { websocketService, PhotoCaptureEvent, FatigueAlert } from '../../services/websocketService';
+import { websocketService, PhotoCaptureEvent, FatigueAlert, FatigueSafeStopEvent } from '../../services/websocketService';
+import { alertAudioService } from '../../services/alertAudioService';
+import { useToast } from '../../components/feedback/ToastProvider';
+import { EmptyState } from '../../components/feedback/EmptyState';
 
 export const UploadScreen: React.FC = () => {
-  const { currentSession, startSession, endSession, loading: sessionLoading } = useSession();
+  const { currentSession, startSession, endSession, loading: sessionLoading, loadCurrentSession } = useSession();
   const { token, user } = useAuth();
+  const { showToast } = useToast();
   const [cameraPermission, setCameraPermission] = useState<{ granted: boolean; status: string } | null>(null);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -77,7 +81,7 @@ export const UploadScreen: React.FC = () => {
     } catch (error) {
       console.error('UploadScreen: Error requesting camera permission:', error);
       setCameraPermission({ granted: false, status: 'error' });
-      Alert.alert('Permission Error', 'Failed to request camera permission. Please check your device settings.');
+      showToast('Failed to request camera permission. Check device settings.', 'error');
       return false;
     }
   };
@@ -117,13 +121,19 @@ export const UploadScreen: React.FC = () => {
     websocketService.setOnUploadCompleted(handleWebSocketUploadCompleted);
     websocketService.setOnUploadFailed(handleWebSocketUploadFailed);
     websocketService.setOnAIProcessingComplete(handleAIProcessingComplete);
+    websocketService.setOnFatigueSafeStop(handleFatigueSafeStop);
+    websocketService.setOnConnectionChange((connected) => {
+      if (connected) {
+        loadCurrentSession();
+      }
+    });
 
     return () => {
       console.log('UploadScreen: Cleaning up camera service...');
       cameraService.stopCapturing();
       photoUploadService.cancelAllUploads();
     };
-  }, []);
+  }, [loadCurrentSession]);
 
   // Update camera ref when camera component mounts
   useEffect(() => {
@@ -228,7 +238,7 @@ export const UploadScreen: React.FC = () => {
 
   const handleCameraError = (error: string) => {
     console.error('Camera error:', error);
-    Alert.alert('Camera Error', error);
+    showToast(`Camera error: ${error}`, 'error');
   };
 
   const handleUploadProgress = (progress: UploadProgress) => {
@@ -256,16 +266,24 @@ export const UploadScreen: React.FC = () => {
   const handleFatigueAlert = (alert: FatigueAlert) => {
     console.log('UploadScreen: Fatigue alert via WebSocket:', alert);
     if (alert.alert?.actionRequired) {
-      Alert.alert('Fatigue Alert', alert.alert.message);
+      showToast(alert.alert.message || 'Fatigue detected', 'error');
       return;
     }
     if (alert.alert?.severity === 'medium') {
-      Alert.alert('Drowsiness Detected', alert.alert.message);
+      showToast(alert.alert.message || 'Drowsiness detected', 'info');
     }
   };
 
   const handleAIProcessingComplete = (data: any) => {
     console.log('UploadScreen: AI processing complete via WebSocket:', data);
+  };
+
+  const handleFatigueSafeStop = (data: FatigueSafeStopEvent) => {
+    console.log('UploadScreen: fatigue_safe_stop recommendation:', data);
+    showToast(
+      `Safe stop: ${data.placeName}${data.distanceMeters ? ` (${Math.round(data.distanceMeters)}m)` : ''}`,
+      'info'
+    );
   };
 
   // WebSocket event handlers
@@ -296,6 +314,7 @@ export const UploadScreen: React.FC = () => {
 
   const handleStartSession = async () => {
     try {
+      await alertAudioService.unlockFromUserGesture();
       console.log('UploadScreen: Starting new session...');
       
       // Check camera permissions
@@ -303,7 +322,7 @@ export const UploadScreen: React.FC = () => {
       if (!hasPermission) {
         const granted = await requestCameraPermission();
         if (!granted) {
-          Alert.alert('Permission Required', 'Camera permission is required to start a session. Please grant camera access first.');
+          showToast('Camera permission is required to start a session.', 'error');
           return;
         }
       }
@@ -341,49 +360,51 @@ export const UploadScreen: React.FC = () => {
             console.log('UploadScreen: Camera capture started');
           } else {
             console.log('UploadScreen: Failed to start camera capture');
-            Alert.alert('Error', 'Failed to start camera capture');
+            showToast('Failed to start camera capture', 'error');
           }
         } else {
           console.log('UploadScreen: Camera ref not available or sessionId missing, cannot start capture');
-          Alert.alert('Error', 'Camera not ready. Please try again.');
+          showToast('Camera not ready. Please try again.', 'error');
         }
+        showToast('Session started successfully', 'success');
       }
     } catch (error) {
       console.error('UploadScreen: Failed to start session:', error);
-      Alert.alert('Error', 'Failed to start session. Please try again.');
+      showToast('Failed to start session. Please try again.', 'error');
     }
   };
 
   const handleEndSession = async () => {
-    try {
-      if (currentSession) {
-        // Handle both _id and id properties
-        const sessionId = currentSession._id;
-        console.log('Ending session:', sessionId);
-        console.log('Current session object:', currentSession);
-        
-        if (!sessionId) {
-          throw new Error('Session ID not found in current session');
-        }
-        
-        await endSession(sessionId);
-        setActiveSessionId(null);
-        setIsSessionActive(false);
-        cameraService.stopCapturing();
-        setCapturedPhotos([]);
-        setUploadStatuses(new Map());
-        console.log('Session ended');
-      }
-    } catch (error) {
-      console.error('Failed to end session:', error);
-      Alert.alert('Error', 'Failed to end session. Please try again.');
-    }
+    if (!currentSession) return;
+    Alert.alert('End Session', 'Are you sure you want to end the active session?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'End Session',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const sessionId = currentSession._id;
+            if (!sessionId) throw new Error('Session ID not found in current session');
+            await endSession(sessionId);
+            setActiveSessionId(null);
+            setIsSessionActive(false);
+            cameraService.stopCapturing();
+            setCapturedPhotos([]);
+            setUploadStatuses(new Map());
+            showToast('Session ended', 'success');
+          } catch (error) {
+            console.error('Failed to end session:', error);
+            showToast('Failed to end session. Please try again.', 'error');
+          }
+        },
+      },
+    ]);
   };
 
   const requestPermissions = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please grant camera roll permissions to upload photos.');
+      showToast('Please grant camera roll permissions to upload photos.', 'error');
       return false;
     }
     return true;
@@ -413,12 +434,13 @@ export const UploadScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Error picking images:', error);
-      Alert.alert('Image Picker Error', 'Failed to pick images. Please try again.');
+      showToast('Failed to pick images. Please try again.', 'error');
     }
   };
 
   const takePhoto = async () => {
     try {
+      await alertAudioService.unlockFromUserGesture();
       console.log('Requesting camera permissions...');
       let { status } = await Camera.getCameraPermissionsAsync();
       if (status !== 'granted') {
@@ -428,7 +450,7 @@ export const UploadScreen: React.FC = () => {
       console.log('Camera permission status:', status);
       
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant camera permissions to take photos.');
+        showToast('Please grant camera permissions to take photos.', 'error');
         return;
       }
 
@@ -449,22 +471,29 @@ export const UploadScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Error taking photo:', error);
-      Alert.alert('Camera Error', 'Failed to take photo. Please try again.');
+      showToast('Failed to take photo. Please try again.', 'error');
     }
   };
 
   const removeImage = (index: number) => {
-    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+    Alert.alert('Remove Image', 'Remove this image from the queue?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => setSelectedImages(prev => prev.filter((_, i) => i !== index)),
+      },
+    ]);
   };
 
   const uploadImages = async () => {
     if (!currentSession) {
-      Alert.alert('No Active Session', 'Please start a session before uploading photos.');
+      showToast('Please start a session before uploading photos.', 'error');
       return;
     }
 
     if (selectedImages.length === 0) {
-      Alert.alert('No Images', 'Please select images to upload.');
+      showToast('Please select images to upload.', 'error');
       return;
     }
 
@@ -477,11 +506,11 @@ export const UploadScreen: React.FC = () => {
         await uploadSingleImage(imageUri, i);
       }
 
-      Alert.alert('Success', 'All images uploaded successfully!');
+      showToast('All images uploaded successfully!', 'success');
       setSelectedImages([]);
       setUploadProgress({});
     } catch (error: any) {
-      Alert.alert('Upload Failed', error.message || 'Failed to upload images');
+      showToast(error.message || 'Failed to upload images', 'error');
     } finally {
       setUploading(false);
     }
@@ -677,7 +706,7 @@ export const UploadScreen: React.FC = () => {
                   onMountError={(error: any) => {
                     console.error('UploadScreen: Camera mount error:', error);
                     setCameraPermission({ granted: false, status: 'error' });
-                    Alert.alert('Camera Error', 'Failed to initialize camera. Please check permissions.');
+                    showToast('Failed to initialize camera. Please check permissions.', 'error');
                   }}
                 />
               </View>
@@ -727,7 +756,7 @@ export const UploadScreen: React.FC = () => {
         </View>
 
         {/* Selected Images */}
-        {selectedImages.length > 0 && (
+        {selectedImages.length > 0 ? (
           <View style={styles.imagesContainer}>
             <Text style={styles.imagesTitle}>Selected Images ({selectedImages.length})</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -758,6 +787,14 @@ export const UploadScreen: React.FC = () => {
                 </View>
               ))}
             </ScrollView>
+          </View>
+        ) : (
+          <View style={styles.imagesContainer}>
+            <EmptyState
+              icon="🖼️"
+              title="No photos selected"
+              description="Choose photos or take a new one for manual upload."
+            />
           </View>
         )}
 

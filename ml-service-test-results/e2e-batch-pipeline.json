@@ -1,0 +1,83 @@
+﻿{
+    "email":  "e2ebatch.1774993119@example.com",
+    "sessionId":  "69cc3ee052e2f0ea71a2caa9",
+    "perUpload":  [
+                      {
+                          "i":  1,
+                          "photoId":  "69cc3ee152e2f0ea71a2caac",
+                          "confirm":  "Upload confirmed successfully",
+                          "ai":  "completed",
+                          "pred":  "unknown"
+                      },
+                      {
+                          "i":  2,
+                          "photoId":  "69cc3eea52e2f0ea71a2cac3",
+                          "confirm":  "Upload confirmed successfully",
+                          "ai":  "completed",
+                          "pred":  "unknown"
+                      },
+                      {
+                          "i":  3,
+                          "photoId":  "69cc3ef452e2f0ea71a2cada",
+                          "confirm":  "Upload confirmed successfully",
+                          "ai":  "completed",
+                          "pred":  "unknown"
+                      },
+                      {
+                          "i":  4,
+                          "photoId":  "69cc3efd52e2f0ea71a2caf1",
+                          "confirm":  "Upload confirmed successfully",
+                          "ai":  "completed",
+                          "pred":  "unknown"
+                      },
+                      {
+                          "i":  5,
+                          "photoId":  "69cc3f0652e2f0ea71a2cb08",
+                          "confirm":  "Upload confirmed successfully",
+                          "ai":  "completed",
+                          "pred":  "unknown"
+                      }
+                  ],
+    "sessionPhotos":  [
+                          {
+                              "id":  "69cc3f0652e2f0ea71a2cb08",
+                              "seq":  5,
+                              "ai":  "completed",
+                              "pred":  "unknown",
+                              "conf":  0.64,
+                              "ear":  0.3
+                          },
+                          {
+                              "id":  "69cc3efd52e2f0ea71a2caf1",
+                              "seq":  4,
+                              "ai":  "completed",
+                              "pred":  "unknown",
+                              "conf":  0.64,
+                              "ear":  0.3
+                          },
+                          {
+                              "id":  "69cc3ef452e2f0ea71a2cada",
+                              "seq":  3,
+                              "ai":  "completed",
+                              "pred":  "unknown",
+                              "conf":  0.64,
+                              "ear":  0.3
+                          },
+                          {
+                              "id":  "69cc3eea52e2f0ea71a2cac3",
+                              "seq":  2,
+                              "ai":  "completed",
+                              "pred":  "unknown",
+                              "conf":  0.64,
+                              "ear":  0.3
+                          },
+                          {
+                              "id":  "69cc3ee152e2f0ea71a2caac",
+                              "seq":  1,
+                              "ai":  "completed",
+                              "pred":  "unknown",
+                              "conf":  0.64,
+                              "ear":  0.3
+                          }
+                      ]
+}

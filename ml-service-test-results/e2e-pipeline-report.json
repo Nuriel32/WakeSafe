@@ -1,0 +1,145 @@
+﻿{
+    "executedAt":  "2026-04-01T00:36:57.7193857+03:00",
+    "userEmail":  "e2e.1774992997@example.com",
+    "sessionId":  "69cc3e66759e305e0b8bdf35",
+    "results":  [
+                    {
+                        "photoIndex":  1,
+                        "photoId":  "69cc3e67759e305e0b8bdf38",
+                        "presignedPath":  "sessions/69cc3e66759e305e0b8bdf35/photos/photo_000001_1774992998724_e2e.jpg",
+                        "confirmOk":  false,
+                        "confirmError":  "The remote server returned an error: (500) Internal Server Error.",
+                        "statusHistory":  [
+                                              {
+                                                  "uploadStatus":  "uploaded",
+                                                  "aiProcessingStatus":  "failed",
+                                                  "prediction":  "pending",
+                                                  "at":  1
+                                              }
+                                          ]
+                    },
+                    {
+                        "photoIndex":  2,
+                        "photoId":  "69cc3e70759e305e0b8bdf49",
+                        "presignedPath":  "sessions/69cc3e66759e305e0b8bdf35/photos/photo_000002_1774993008114_e2e.jpg",
+                        "confirmOk":  false,
+                        "confirmError":  "The remote server returned an error: (500) Internal Server Error.",
+                        "statusHistory":  [
+                                              {
+                                                  "uploadStatus":  "uploaded",
+                                                  "aiProcessingStatus":  "failed",
+                                                  "prediction":  "pending",
+                                                  "at":  1
+                                              }
+                                          ]
+                    }
+                ],
+    "sessionPhotos":  {
+                          "photos":  [
+                                         {
+                                             "clientMeta":  {
+                                                                "captureType":  "continuous"
+                                                            },
+                                             "imageQuality":  {
+                                                                  "isValid":  true
+                                                              },
+                                             "_id":  "69cc3e70759e305e0b8bdf49",
+                                             "sessionId":  "69cc3e66759e305e0b8bdf35",
+                                             "userId":  {
+                                                            "_id":  "69cc3e65759e305e0b8bdf31",
+                                                            "firstName":  "E2E",
+                                                            "lastName":  "Tester"
+                                                        },
+                                             "gcsPath":  "sessions/69cc3e66759e305e0b8bdf35/photos/photo_000002_1774993008114_e2e.jpg",
+                                             "sequenceNumber":  2,
+                                             "captureTimestamp":  1774993008114,
+                                             "folderType":  "before-ai",
+                                             "prediction":  "pending",
+                                             "aiProcessingStatus":  "failed",
+                                             "contentType":  "image/jpeg",
+                                             "fileName":  "photo_000002_1774993008114_e2e.jpg",
+                                             "uploadStatus":  "uploaded",
+                                             "uploadMethod":  "presigned",
+                                             "uploadRetries":  1,
+                                             "uploadedAt":  "2026-03-31T21:36:51.410Z",
+                                             "websocketEvents":  [
+                                                                     {
+                                                                         "eventType":  "ai_processing_started",
+                                                                         "timestamp":  "2026-03-31T21:36:51.698Z",
+                                                                         "data":  {
+                                                                                      "photoId":  "69cc3e70759e305e0b8bdf49",
+                                                                                      "sessionId":  "69cc3e66759e305e0b8bdf35"
+                                                                                  },
+                                                                         "_id":  "69cc3e73759e305e0b8bdf4e"
+                                                                     },
+                                                                     {
+                                                                         "eventType":  "ai_processing_failed",
+                                                                         "timestamp":  "2026-03-31T21:36:52.332Z",
+                                                                         "data":  {
+                                                                                      "message":  "Failed to parse URL from https://wakesafe-ml1-service-227831302277.us-central1.run.app ML2_SERVICE_URL=https://wakesafe-ml2-service-227831302277.us-central1.run.app/predict"
+                                                                                  },
+                                                                         "_id":  "69cc3e74759e305e0b8bdf53"
+                                                                     }
+                                                                 ],
+                                             "createdAt":  "2026-03-31T21:36:48.570Z",
+                                             "updatedAt":  "2026-03-31T21:36:52.544Z",
+                                             "__v":  2,
+                                             "processingStartedAt":  "2026-03-31T21:36:51.910Z",
+                                             "processingCompletedAt":  "2026-03-31T21:36:52.544Z"
+                                         },
+                                         {
+                                             "clientMeta":  {
+                                                                "captureType":  "continuous"
+                                                            },
+                                             "imageQuality":  {
+                                                                  "isValid":  true
+                                                              },
+                                             "_id":  "69cc3e67759e305e0b8bdf38",
+                                             "sessionId":  "69cc3e66759e305e0b8bdf35",
+                                             "userId":  {
+                                                            "_id":  "69cc3e65759e305e0b8bdf31",
+                                                            "firstName":  "E2E",
+                                                            "lastName":  "Tester"
+                                                        },
+                                             "gcsPath":  "sessions/69cc3e66759e305e0b8bdf35/photos/photo_000001_1774992998724_e2e.jpg",
+                                             "sequenceNumber":  1,
+                                             "captureTimestamp":  1774992998724,
+                                             "folderType":  "before-ai",
+                                             "prediction":  "pending",
+                                             "aiProcessingStatus":  "failed",
+                                             "contentType":  "image/jpeg",
+                                             "fileName":  "photo_000001_1774992998724_e2e.jpg",
+                                             "uploadStatus":  "uploaded",
+                                             "uploadMethod":  "presigned",
+                                             "uploadRetries":  1,
+                                             "uploadedAt":  "2026-03-31T21:36:42.342Z",
+                                             "websocketEvents":  [
+                                                                     {
+                                                                         "eventType":  "ai_processing_started",
+                                                                         "timestamp":  "2026-03-31T21:36:42.610Z",
+                                                                         "data":  {
+                                                                                      "photoId":  "69cc3e67759e305e0b8bdf38",
+                                                                                      "sessionId":  "69cc3e66759e305e0b8bdf35"
+                                                                                  },
+                                                                         "_id":  "69cc3e6a759e305e0b8bdf3d"
+                                                                     },
+                                                                     {
+                                                                         "eventType":  "ai_processing_failed",
+                                                                         "timestamp":  "2026-03-31T21:36:43.240Z",
+                                                                         "data":  {
+                                                                                      "message":  "Failed to parse URL from https://wakesafe-ml1-service-227831302277.us-central1.run.app ML2_SERVICE_URL=https://wakesafe-ml2-service-227831302277.us-central1.run.app/predict"
+                                                                                  },
+                                                                         "_id":  "69cc3e6b759e305e0b8bdf42"
+                                                                     }
+                                                                 ],
+                                             "createdAt":  "2026-03-31T21:36:39.188Z",
+                                             "updatedAt":  "2026-03-31T21:36:43.452Z",
+                                             "__v":  2,
+                                             "processingStartedAt":  "2026-03-31T21:36:42.821Z",
+                                             "processingCompletedAt":  "2026-03-31T21:36:43.452Z"
+                                         }
+                                     ],
+                          "count":  2,
+                          "sessionId":  "69cc3e66759e305e0b8bdf35"
+                      }
+}

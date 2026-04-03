@@ -1,19 +1,13 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View, TextInput } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
+import { Screen } from '../../components/ui/Screen';
+import { Card } from '../../components/ui/Card';
+import { InputField } from '../../components/ui/InputField';
+import { Button } from '../../components/ui/Button';
+import { colors, spacing, typography } from '../../theme/tokens';
+import { useToast } from '../../components/feedback/ToastProvider';
 
 interface LoginScreenProps {
   navigation: any;
@@ -22,26 +16,21 @@ interface LoginScreenProps {
 export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
   const { login } = useAuth();
+  const { showToast } = useToast();
+
+  const isDisabled = useMemo(() => !email.trim() || !password.trim() || loading, [email, password, loading]);
 
   const validateInput = () => {
-    if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email address');
-      return false;
-    }
-
-    if (!CONFIG.VALIDATION.EMAIL_REGEX.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return false;
-    }
-
-    if (!password.trim()) {
-      Alert.alert('Error', 'Please enter your password');
-      return false;
-    }
-
-    return true;
+    const nextErrors: { email?: string; password?: string } = {};
+    if (!email.trim()) nextErrors.email = 'Email is required';
+    else if (!CONFIG.VALIDATION.EMAIL_REGEX.test(email.trim())) nextErrors.email = 'Enter a valid email address';
+    if (!password.trim()) nextErrors.password = 'Password is required';
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleLogin = async () => {
@@ -49,186 +38,102 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
     setLoading(true);
     try {
-      console.log('Attempting login for:', email.trim());
-      const result = await login(email.trim(), password);
-      console.log('Login result:', result);
-      console.log('Login completed - waiting for navigation...');
-      
-      // Add timeout to check if App component re-renders
-      setTimeout(() => {
-        console.log('Forcing re-render check...');
-        console.log('Current time:', new Date().toISOString());
-      }, 1000);
-      
-      // Navigation will be handled by the auth state change
+      await login(email.trim(), password);
+      showToast('Login successful', 'success');
     } catch (error: any) {
-      console.error('Login error:', error);
-      Alert.alert('Login Failed', error.message || CONFIG.ERRORS.UNAUTHORIZED);
+      showToast(error.message || CONFIG.ERRORS.UNAUTHORIZED, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidingView}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <View style={styles.header}>
-            <Text style={styles.logo}>🚗</Text>
-            <Text style={styles.title}>WakeSafe</Text>
-            <Text style={styles.subtitle}>Driver Safety & Fatigue Detection</Text>
-          </View>
+    <Screen contentStyle={styles.centerContent}>
+      <View style={styles.header}>
+        <Text style={styles.logo}>WakeSafe</Text>
+        <Text style={styles.subtitle}>Driver safety and fatigue detection</Text>
+      </View>
 
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="Enter your email"
-                placeholderTextColor="#999"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!loading}
-              />
-            </View>
+      <Card style={styles.card}>
+        <InputField
+          label="Email"
+          value={email}
+          onChangeText={(v) => {
+            setEmail(v);
+            if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+          }}
+          error={errors.email}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="next"
+          autoFocus
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          editable={!loading}
+        />
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter your password"
-                placeholderTextColor="#999"
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!loading}
-              />
-            </View>
+        <InputField
+          ref={passwordRef}
+          label="Password"
+          value={password}
+          onChangeText={(v) => {
+            setPassword(v);
+            if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+          }}
+          error={errors.password}
+          placeholder="Enter your password"
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
+          editable={!loading}
+        />
 
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Login</Text>
-              )}
-            </TouchableOpacity>
+        <Button title="Sign in" onPress={handleLogin} loading={loading} disabled={isDisabled} />
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                <Text style={styles.linkText}>Register</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>No account yet?</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+            <Text style={styles.linkText}> Create one</Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
+  centerContent: { justifyContent: 'center' },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: spacing.lg,
   },
   logo: {
-    fontSize: 60,
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 8,
+    fontSize: typography.title,
+    fontWeight: '800',
+    color: colors.text,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#64748b',
+    fontSize: typography.body,
+    color: colors.textMuted,
     textAlign: 'center',
   },
-  form: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 16,
-    backgroundColor: '#f8fafc',
-    color: '#1e293b',
-  },
-  button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 20,
-  },
-  buttonDisabled: {
-    backgroundColor: '#94a3b8',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  card: { width: '100%', maxWidth: 560, alignSelf: 'center' },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: spacing.md,
   },
   footerText: {
-    fontSize: 14,
-    color: '#64748b',
+    fontSize: typography.caption,
+    color: colors.textMuted,
   },
   linkText: {
-    fontSize: 14,
-    color: '#2563eb',
-    fontWeight: '600',
+    fontSize: typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
   },
 });

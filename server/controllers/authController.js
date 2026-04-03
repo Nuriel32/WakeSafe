@@ -5,6 +5,7 @@ const cache = require('../services/cacheService');
 const User = require('../models/Users');
 const DriverSession = require('../models/DriverSession');
 const logger = require('../utils/logger');
+const HttpError = require('../utils/httpError');
 
 // פונקציה פנימית ליצירת JWT
 function generateToken(user, jti) {
@@ -24,25 +25,29 @@ function generateToken(user, jti) {
  * @desc Register a new user and create a driver session
  * @access Public
  */
-async function register(req, res) {
-  console.log('Register endpoint called with body:', req.body);
+async function register(req, res, next) {
+  const log = req.log || logger.child({
+    requestId: req.requestId || null,
+    userId: null,
+    tripId: req.body?.sessionId || req.body?.tripId || null,
+  });
   const { firstName, lastName, email, password, phone, carNumber } = req.body;
 
   if (!firstName || !lastName || !email || !password || !phone || !carNumber) {
-    console.log('Missing required fields');
-    return res.status(400).json({ message: 'Missing required fields' });
+    log.warn('register_validation_failed', { reason: 'missing_required_fields', email });
+    return next(new HttpError(400, 'Missing required fields', null, 'VALIDATION_ERROR'));
   }
 
   if (!/\S+@\S+\.\S+/.test(email)) {
-    return res.status(400).json({ message: 'Invalid email format' });
+    return next(new HttpError(400, 'Invalid email format', null, 'VALIDATION_ERROR'));
   }
 
   if (!/^05\d{8}$/.test(phone)) {
-    return res.status(400).json({ message: 'Invalid phone number format' });
+    return next(new HttpError(400, 'Invalid phone number format', null, 'VALIDATION_ERROR'));
   }
 
   if (!/^\d{7,8}$/.test(carNumber)) {
-    return res.status(400).json({ message: 'Invalid car number format' });
+    return next(new HttpError(400, 'Invalid car number format', null, 'VALIDATION_ERROR'));
   }
 
   try {
@@ -68,12 +73,11 @@ async function register(req, res) {
     await cache.set(`token:${user._id}`, token, 3600);
     await cache.set(`jti:${user._id}`, jti, 3600);
 
-    logger.info(`User registered successfully: ${email}`);
-    res.status(201).json({ token });
+    log.info('register_success', { userId: user._id.toString(), email });
+    return res.success({ token }, { statusCode: 201, message: 'Registration successful' });
   } catch (error) {
-    console.error('Registration error:', error);
-    logger.error(`Registration failed for email ${email}: ${error.message}`);
-    res.status(400).json({ message: 'Registration failed, email might already exist' });
+    log.error('register_failed', { email, error });
+    return next(new HttpError(400, 'Registration failed, email might already exist', null, 'REGISTER_FAILED'));
   }
 }
 
@@ -82,45 +86,32 @@ async function register(req, res) {
  * @desc Authenticate user and return a JWT token
  * @access Public
  */
-async function login(req, res) {
+async function login(req, res, next) {
+  const log = req.log || logger.child({
+    requestId: req.requestId || null,
+    userId: null,
+    tripId: null,
+  });
   const { email, password } = req.body;
 
   try {
     const user = await User.findOne({ email });
     if (!user || !(await user.comparePassword(password))) {
-      logger.warn(`From authController: Login attempt failed for email: ${email}`);
-      return res.status(401).json({ message: 'Invalid credentials' });
+      log.warn('login_failed', { email, reason: 'invalid_credentials' });
+      return next(new HttpError(401, 'Invalid credentials', null, 'INVALID_CREDENTIALS'));
     }
-
-    console.log('User found for login:', {
-      id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      phone: user.phone,
-      carNumber: user.carNumber
-    });
 
     const jti = uuidv4();
     const token = generateToken(user, jti);
-    
-    console.log('Generated JWT payload:', {
-      id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      phone: user.phone,
-      carNumber: user.carNumber
-    });
 
     await cache.set(`token:${user._id}`, token, 3600);
     await cache.set(`jti:${user._id}`, jti, 3600);
 
-    logger.info(`From authController: User logged in successfully: ${email}`);
-    res.json({ token });
+    log.info('login_success', { userId: user._id.toString(), email });
+    return res.success({ token }, { message: 'Login successful' });
   } catch (error) {
-    logger.error(`From authController:  Login failed for email ${email}: ${error.message}`);
-    res.status(500).json({ message: 'Login failed' });
+    log.error('login_error', { email, error });
+    return next(new HttpError(500, 'Login failed', null, 'LOGIN_FAILED'));
   }
 }
 
@@ -129,19 +120,24 @@ async function login(req, res) {
  * @desc Logout and invalidate JWT
  * @access Private
  */
-async function logout(req, res) {
+async function logout(req, res, next) {
+  const log = req.log || logger.child({
+    requestId: req.requestId || null,
+    userId: req.user?.id || null,
+    tripId: null,
+  });
   const jti = req.user.jti;
   if (!jti) {
-    logger.warn(`Logout attempt with missing JTI by user ${req.user.id}`);
-    return res.status(400).json({ message: "Missing token ID" });
+    log.warn('logout_failed', { reason: 'missing_jti' });
+    return next(new HttpError(400, 'Missing token ID', null, 'TOKEN_ID_MISSING'));
   }
 
   await cache.revokeToken(jti);
   await cache.del(`token:${req.user.id}`);
   await cache.del(`jti:${req.user.id}`);
 
-  logger.info(`From authController: User ${req.user.id} logged out successfully`);
-  res.json({ message: 'Logout successful' });
+  log.info('logout_success');
+  return res.success(null, { message: 'Logout successful' });
 }
 
 module.exports = {

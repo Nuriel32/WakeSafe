@@ -1,0 +1,13 @@
+﻿{
+    "email":  "e2efix.1774993086@example.com",
+    "sessionId":  "69cc3ebf52e2f0ea71a2ca8c",
+    "photoId":  "69cc3ec052e2f0ea71a2ca8f",
+    "confirm":  "Upload confirmed successfully",
+    "poll":  [
+                 {
+                     "ai":  "completed",
+                     "pred":  "unknown",
+                     "at":  1
+                 }
+             ]
+}

@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 // Screens
 import { LoginScreen } from './src/screens/auth/LoginScreen';
@@ -16,6 +17,9 @@ import { ProfileScreen } from './src/screens/main/ProfileScreen';
 
 // Hooks
 import { useAuth, AuthProvider } from './src/hooks/useAuth';
+import { SessionProvider } from './src/hooks/useSession';
+import { ToastProvider } from './src/components/feedback/ToastProvider';
+import { colors } from './src/theme/tokens';
 
 // Types
 import { RootStackParamList, AuthStackParamList, MainTabParamList } from './src/types';
@@ -39,19 +43,25 @@ const MainNavigator = () => (
   <MainTab.Navigator
     screenOptions={{
       headerShown: false,
+      lazy: true,
+      tabBarHideOnKeyboard: true,
       tabBarStyle: {
         backgroundColor: '#fff',
         borderTopColor: '#e2e8f0',
         borderTopWidth: 1,
         paddingBottom: 5,
         paddingTop: 5,
-        height: 60,
+        height: 64,
       },
       tabBarActiveTintColor: '#2563eb',
       tabBarInactiveTintColor: '#64748b',
       tabBarLabelStyle: {
         fontSize: 12,
-        fontWeight: '500',
+        fontWeight: '600',
+      },
+      tabBarItemStyle: {
+        borderRadius: 10,
+        marginHorizontal: 2,
       },
     }}
   >
@@ -59,76 +69,37 @@ const MainNavigator = () => (
       name="Dashboard"
       component={DashboardScreen}
       options={{
-        tabBarIcon: ({ color, size }) => (
-          <View style={[styles.tabIcon, { backgroundColor: color }]} />
-        ),
+        tabBarLabel: 'Home',
+        tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
       }}
     />
     <MainTab.Screen
       name="Upload"
       component={UploadScreen}
       options={{
-        tabBarIcon: ({ color, size }) => (
-          <View style={[styles.tabIcon, { backgroundColor: color }]} />
-        ),
+        tabBarLabel: 'Capture',
+        tabBarIcon: ({ color, size }) => <Ionicons name="camera-outline" size={size} color={color} />,
       }}
     />
     <MainTab.Screen
       name="Gallery"
       component={GalleryScreen}
       options={{
-        tabBarIcon: ({ color, size }) => (
-          <View style={[styles.tabIcon, { backgroundColor: color }]} />
-        ),
+        tabBarIcon: ({ color, size }) => <Ionicons name="images-outline" size={size} color={color} />,
       }}
     />
     <MainTab.Screen
       name="Profile"
       component={ProfileScreen}
       options={{
-        tabBarIcon: ({ color, size }) => (
-          <View style={[styles.tabIcon, { backgroundColor: color }]} />
-        ),
+        tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" size={size} color={color} />,
       }}
     />
   </MainTab.Navigator>
 );
 
 function AppInner() {
-  const { isAuthenticated, loading, user, token, renderKey, forceUpdate } = useAuth();
-  
-  // Force re-render state
-  const [forceRender, setForceRender] = React.useState(0);
-  const [appState, setAppState] = React.useState({ isAuthenticated, loading, user, token });
-
-  console.log('App render - Auth state:', { 
-    isAuthenticated, 
-    loading, 
-    hasUser: !!user, 
-    hasToken: !!token,
-    userEmail: user?.email,
-    renderKey,
-    forceRender
-  });
-  
-  console.log('Navigation decision:', appState.isAuthenticated ? 'Main Navigator' : 'Auth Navigator');
-  
-  // Update appState whenever auth state changes
-  React.useEffect(() => {
-    console.log('App useEffect - Auth state changed:', { 
-      isAuthenticated, 
-      loading, 
-      hasUser: !!user, 
-      hasToken: !!token,
-      renderKey
-    });
-    
-    // Update appState to force re-render
-    setAppState({ isAuthenticated, loading, user, token });
-    
-    // Force a re-render when auth state changes
-    setForceRender(prev => prev + 1);
-  }, [isAuthenticated, loading, user, token, renderKey]);
+  const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return (
@@ -143,7 +114,7 @@ function AppInner() {
       <NavigationContainer>
         <StatusBar style="auto" />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {appState.isAuthenticated ? (
+          {isAuthenticated ? (
             <Stack.Screen name="Main" component={MainNavigator} />
           ) : (
             <Stack.Screen name="Auth" component={AuthNavigator} />
@@ -157,7 +128,11 @@ function AppInner() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppInner />
+      <SessionProvider>
+        <ToastProvider>
+          <AppInner />
+        </ToastProvider>
+      </SessionProvider>
     </AuthProvider>
   );
 }
@@ -167,11 +142,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  tabIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    backgroundColor: colors.bg,
   },
 });

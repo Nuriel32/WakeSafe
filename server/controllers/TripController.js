@@ -1,6 +1,6 @@
 const Trip = require('../models/DriverSession');
 const ImageLog = require('../models/ImageLog');
-const { uploadFile, deleteFile } = require('../services/gcpStorageService');
+const { uploadSessionPhoto, deleteFile } = require('../services/gcpStorageService');
 const logger = require('../utils/logger');
 
 /**
@@ -10,7 +10,8 @@ const logger = require('../utils/logger');
  */
 exports.createTrip = async (req, res) => {
   try {
-    const trip = new Trip({ userId: req.user.id });
+    const sessionId = `trip_${req.user.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const trip = new Trip({ userId: req.user.id, sessionId });
     await trip.save();
     logger.info(`From TripController: Trip created for user ${req.user.id}, Trip ID: ${trip._id}`);
     res.status(201).json({ tripId: trip._id });
@@ -34,8 +35,27 @@ exports.detectFatigue = async (req, res) => {
   }
 
   try {
+    const trip = await Trip.findOne({ _id: tripId, userId: req.user.id, isActive: true });
+    if (!trip) {
+      return res.status(404).json({ error: 'Trip not found' });
+    }
+
     const filename = `fatigue-${Date.now()}.jpg`;
-    const url = await uploadImage(image, filename);
+    const base64 = image.includes(',') ? image.split(',')[1] : image;
+    const buffer = Buffer.from(base64, 'base64');
+    const upload = await uploadSessionPhoto(
+      {
+        originalname: filename,
+        mimetype: 'image/jpeg',
+        size: buffer.length,
+        buffer
+      },
+      req.user.id,
+      tripId,
+      { sequenceNumber: 0, captureTimestamp: Date.now() },
+      'before-ai'
+    );
+    const url = upload.gcsPath;
 
     const log = new ImageLog({
       tripId,
@@ -47,12 +67,11 @@ exports.detectFatigue = async (req, res) => {
 
     await log.save();
 
-    await Trip.findByIdAndUpdate(tripId, {
-      $push: {
-        'stats.earReadings': { value: ear, timestamp: new Date() },
-        'stats.headPoseData': { ...headPose, timestamp: new Date() }
-      }
-    });
+    await trip.addEvent(
+      'fatigue_detected',
+      { ear, headPose, fatigued: ear < 0.2 || Math.abs(headPose.pitch) > 15, imageId: filename },
+      'api'
+    );
 
     const isFatigued = ear < 0.2 || Math.abs(headPose.pitch) > 15;
     logger.info(`From TripController:  Fatigue detection processed for user ${req.user.id} (fatigued: ${isFatigued})`);
@@ -79,8 +98,7 @@ exports.deleteImagesFromLastMinute = async (req, res) => {
     });
 
     for (const image of images) {
-      const filename = image.url.split('/').pop();
-      await deleteFileFromGCP(filename);
+      await deleteFile(image.url);
       await ImageLog.findByIdAndDelete(image._id);
     }
 

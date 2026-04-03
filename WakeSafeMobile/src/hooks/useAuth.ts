@@ -256,7 +256,6 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
           .join('')
       );
 
-      console.log('JWT payload:', jsonPayload);
       const decoded = JSON.parse(jsonPayload);
       console.log('Decoded JWT:', decoded);
       

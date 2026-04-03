@@ -1,0 +1,12 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/backend/Dockerfile
+      - -t
+      - us-central1-docker.pkg.dev/wakesafe-470816/wakesafe/wakesafe-api:manual-latest
+      - .
+
+images:
+  - us-central1-docker.pkg.dev/wakesafe-470816/wakesafe/wakesafe-api:manual-latest

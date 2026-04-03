@@ -105,18 +105,23 @@ const driverSessionSchema = new mongoose.Schema({
   }]
 }, { 
   timestamps: true,
-  indexes: [
-    { userId: 1, isActive: 1 },
-    { sessionId: 1 },
-    { startTime: -1 },
-    { endTime: -1 },
-    { status: 1 },
-    { 'startLocation.lat': 1, 'startLocation.lng': 1 },
-    { 'aiProcessingStats.alertCount': -1 },
-    { 'aiProcessingStats.drowsyCount': -1 },
-    { 'aiProcessingStats.sleepingCount': -1 }
-  ]
 });
+
+// Ensure fast current-session lookup and history retrieval.
+driverSessionSchema.index({ userId: 1, startTime: -1 });
+driverSessionSchema.index({ startTime: -1 });
+driverSessionSchema.index({ endTime: -1 });
+driverSessionSchema.index({ status: 1 });
+driverSessionSchema.index({ 'startLocation.lat': 1, 'startLocation.lng': 1 });
+driverSessionSchema.index({ 'aiProcessingStats.alertCount': -1 });
+driverSessionSchema.index({ 'aiProcessingStats.drowsyCount': -1 });
+driverSessionSchema.index({ 'aiProcessingStats.sleepingCount': -1 });
+
+// Data integrity: only one active session per user at a time.
+driverSessionSchema.index(
+  { userId: 1, isActive: 1 },
+  { unique: true, partialFilterExpression: { isActive: true } }
+);
 
 // Methods for DriverSession
 driverSessionSchema.methods.addEvent = function(eventType, data, source = 'server') {
