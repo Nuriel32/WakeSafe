@@ -4,11 +4,17 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
+    "start:clear": "expo start --clear",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "env:development": "node switch-env.js development",
+    "env:local": "node switch-env.js local",
+    "env:staging": "node switch-env.js staging",
+    "env:production": "node switch-env.js production"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.4.7",
     "@react-navigation/native": "^7.1.17",

@@ -5,6 +5,34 @@ const logger = require('../utils/logger');
 const crypto = require('crypto');
 const aiProcessingService = require('../services/aiProcessingService');
 
+function safeJsonParse(value) {
+    if (value == null) return null;
+    if (typeof value === 'object') return value;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return null;
+    }
+}
+
+function sanitizeFileName(input) {
+    const normalized = String(input || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+    return normalized.slice(0, 128);
+}
+
+function isValidObjectId(value) {
+    return /^[a-fA-F0-9]{24}$/.test(String(value || ''));
+}
+
+function normalizeLocation(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const lat = Number(raw.latitude ?? raw.lat);
+    const lng = Number(raw.longitude ?? raw.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { lat, lng, accuracy: Number(raw.accuracy || 0), timestamp: Number(raw.timestamp || Date.now()) };
+}
+
 /**
  * Handles photo upload from the client with enhanced metadata for AI processing
  * - Uploads photo to GCP (organized by drivers/userId/sessions/sessionId/photos)
@@ -17,6 +45,9 @@ async function uploadPhoto(req, res) {
         const { sessionId, location, clientMeta, sequenceNumber, timestamp, folderType } = req.body;
         const userId = req.user.id;
         const file = req.file;
+        if (!isValidObjectId(sessionId)) {
+            return res.status(400).json({ error: 'Invalid sessionId format' });
+        }
         const session = req.session || await DriverSession.findOne({
             _id: sessionId,
             userId,
@@ -37,8 +68,8 @@ async function uploadPhoto(req, res) {
         // Prepare metadata for AI processing
         const metadata = {
             processingStatus: 'pending',
-            location: location ? JSON.parse(location) : null,
-            clientMeta: clientMeta ? JSON.parse(clientMeta) : null,
+            location: normalizeLocation(safeJsonParse(location)),
+            clientMeta: safeJsonParse(clientMeta),
             sequenceNumber: sequenceNumber ? parseInt(sequenceNumber) : null,
             captureTimestamp: timestamp ? parseInt(timestamp) : Date.now(),
             folderType: photoFolderType,
@@ -111,13 +142,17 @@ async function getPresignedUrl(req, res) {
     try {
         const { fileName, sessionId, sequenceNumber, timestamp, location, clientMeta } = req.body;
         const userId = req.user.id;
+        const safeFileName = sanitizeFileName(fileName);
+        if (!isValidObjectId(sessionId)) {
+            return res.status(400).json({ error: 'Invalid sessionId format' });
+        }
         const session = req.session || await DriverSession.findOne({
             _id: sessionId,
             userId,
             isActive: true
         });
 
-        if (!fileName || !sessionId) {
+        if (!safeFileName || !sessionId) {
             logger.warn(`From UploadController: Presigned URL request missing fileName or sessionId. User: ${userId}`);
             return res.status(400).json({ error: 'Missing fileName or sessionId' });
         }
@@ -126,7 +161,7 @@ async function getPresignedUrl(req, res) {
         }
 
         // Validate file extension
-        const extension = fileName.split('.').pop().toLowerCase();
+        const extension = safeFileName.split('.').pop().toLowerCase();
         const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
         if (!allowedExtensions.includes(extension)) {
             return res.status(400).json({ error: `Unsupported file format: ${extension}` });
@@ -150,7 +185,7 @@ async function getPresignedUrl(req, res) {
             userId,
             gcsPath: `gs://${process.env.GCS_BUCKET}/${gcsPath}`,
             name: smartName,
-            location: location || null,
+            location: normalizeLocation(safeJsonParse(location)),
             clientMeta: clientMeta || null,
             sequenceNumber: seqNum,
             captureTimestamp: captureTimestamp,
@@ -193,7 +228,7 @@ async function confirmUpload(req, res) {
         const { photoId, uploadSuccess } = req.body;
         const userId = req.user.id;
 
-        if (!photoId) {
+        if (!photoId || !isValidObjectId(photoId)) {
             return res.status(400).json({ error: 'Missing photoId' });
         }
 

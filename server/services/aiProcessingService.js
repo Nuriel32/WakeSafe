@@ -2,28 +2,46 @@ const logger = require('../utils/logger');
 const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const FatigueLog = require('../models/FatigueLog');
+const fatigueAlertService = require('./fatigueAlertService');
+const monitoring = require('./monitoringService');
+const mlAdapter = require('../adapters/mlAdapter');
 
 // AI Processing Service for WakeSafe
 // This service handles communication with the AI server for fatigue detection
 
-const AI_SERVER_URL = process.env.AI_SERVER_URL || 'http://localhost:8081';
-const ML1_SERVICE_URL = process.env.ML1_SERVICE_URL || 'http://localhost:8001';
-const ML2_SERVICE_URL = process.env.ML2_SERVICE_URL || 'http://localhost:8002';
 const ML2_SEQUENCE_WINDOW_SIZE = parseInt(process.env.ML2_SEQUENCE_WINDOW_SIZE || '20', 10);
+const ML_ALERT_MIN_CONFIDENCE = Number(process.env.ML_ALERT_MIN_CONFIDENCE || 0.75);
+const ML_ALERT_MIN_SEVERITY = Number(process.env.ML_ALERT_MIN_SEVERITY || 0.7);
+const ML_ALERT_CONSECUTIVE_FRAMES = parseInt(process.env.ML_ALERT_CONSECUTIVE_FRAMES || '2', 10);
 
-async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+function validateMl1Payload(payload) {
+  if (!payload || typeof payload !== 'object') throw new Error('Invalid ML1 payload');
+  if (!payload.image_url || typeof payload.image_url !== 'string') throw new Error('ML1 payload missing image_url');
+  if (!payload.image_id || typeof payload.image_id !== 'string') throw new Error('ML1 payload missing image_id');
+}
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed (${response.status}) for ${url}: ${text}`);
+function validateMl2Payload(payload) {
+  if (!payload || typeof payload !== 'object') throw new Error('Invalid ML2 payload');
+  if (!Array.isArray(payload.sequence) || payload.sequence.length === 0) {
+    throw new Error('ML2 payload requires non-empty sequence');
   }
+}
 
-  return response.json();
+function validateMl1Response(response) {
+  const frame = response?.frame_analysis;
+  if (!frame || typeof frame !== 'object') throw new Error('ML1 response missing frame_analysis');
+  if (typeof frame.confidence !== 'number' || Number.isNaN(frame.confidence)) {
+    throw new Error('ML1 response has invalid confidence');
+  }
+}
+
+function validateMl2Response(response) {
+  if (!response || typeof response !== 'object') throw new Error('Invalid ML2 response');
+  if (typeof response.fatigued !== 'boolean') throw new Error('ML2 response missing fatigued');
+  if (typeof response.driver_state !== 'string') throw new Error('ML2 response missing driver_state');
+  if (typeof response.severity !== 'number' || Number.isNaN(response.severity)) {
+    throw new Error('ML2 response has invalid severity');
+  }
 }
 
 function normalizeGcsPath(gcsPath) {
@@ -76,9 +94,38 @@ async function buildTemporalSequence(sessionId, currentFrame) {
   return sequence.slice(-ML2_SEQUENCE_WINDOW_SIZE);
 }
 
+async function passesFalsePositiveGuard(sessionId, ml2Response, confidence) {
+  if (!ml2Response?.fatigued) return false;
+  const severity = Number(ml2Response?.severity || 0);
+  if (confidence < ML_ALERT_MIN_CONFIDENCE || severity < ML_ALERT_MIN_SEVERITY) {
+    return false;
+  }
+
+  if (ML_ALERT_CONSECUTIVE_FRAMES <= 1) {
+    return true;
+  }
+
+  const recent = await Photo.find({
+    sessionId,
+    aiProcessingStatus: 'completed',
+    prediction: { $in: ['drowsy', 'sleeping'] },
+    'aiResults.confidence': { $gte: ML_ALERT_MIN_CONFIDENCE },
+  })
+    .sort({ captureTimestamp: -1, uploadedAt: -1 })
+    .limit(Math.max(ML_ALERT_CONSECUTIVE_FRAMES - 1, 1))
+    .select('prediction aiResults.confidence')
+    .lean();
+
+  const priorHits = recent.length;
+  return priorHits + 1 >= ML_ALERT_CONSECUTIVE_FRAMES;
+}
+
 async function queuePhotoForProcessing(photoDoc, signedUrl) {
   const startedAt = Date.now();
   const photoId = photoDoc?._id?.toString();
+  const userId = photoDoc?.userId?.toString() || null;
+  const sessionId = photoDoc?.sessionId?.toString() || null;
+  const log = logger.child({ requestId: null, userId, tripId: sessionId, photoId });
 
   if (!photoDoc || !photoId) {
     throw new Error('Invalid photo document for AI processing');
@@ -90,6 +137,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
   }
 
   try {
+    log.info('ai_processing_started');
     if (typeof photoDoc.addWebSocketEvent === 'function') {
       await photoDoc.addWebSocketEvent('ai_processing_started', {
         photoId,
@@ -112,12 +160,10 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
       },
     };
 
-    const ml1Response = await postJson(`${ML1_SERVICE_URL}/predict`, ml1Payload);
+    validateMl1Payload(ml1Payload);
+    const ml1Response = await mlAdapter.ml1Predict(ml1Payload);
+    validateMl1Response(ml1Response);
     const frame = ml1Response?.frame_analysis;
-
-    if (!frame) {
-      throw new Error(`ML1 did not return frame_analysis for photo ${photoId}`);
-    }
 
     const ml2CurrentFrame = {
       timestamp: frame.processed_at || new Date().toISOString(),
@@ -138,7 +184,9 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
       sequence,
     };
 
-    const ml2Response = await postJson(`${ML2_SERVICE_URL}/analyze`, ml2Payload);
+    validateMl2Payload(ml2Payload);
+    const ml2Response = await mlAdapter.ml2Analyze(ml2Payload);
+    validateMl2Response(ml2Response);
     const finalPrediction = ml2Response?.driver_state || 'unknown';
     const totalProcessingTime = Date.now() - startedAt;
 
@@ -190,25 +238,45 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
       );
     }
 
-    if (global.broadcastFatigueDetection && ml2Response?.fatigued) {
-      global.broadcastFatigueDetection(
-        photoDoc.userId?.toString(),
-        photoDoc.sessionId?.toString(),
-        ml2Response?.driver_state,
-        Number(frame.confidence || 0),
-        photoId,
-        ml2Response
+    const alertAllowed = await passesFalsePositiveGuard(photoDoc.sessionId, ml2Response, Number(frame.confidence || 0));
+    if (ml2Response?.fatigued && alertAllowed) {
+      await fatigueAlertService.processDetection(
+        {
+          userId: photoDoc.userId?.toString(),
+          sessionId: photoDoc.sessionId?.toString(),
+          detectionTimestamp: new Date().toISOString(),
+          fatigueLevel: Number(ml2Response?.severity || 0),
+          confidenceScore: Number(frame.confidence || 0),
+          source: 'ml_pipeline',
+          prediction: ml2Response?.driver_state,
+          photoId,
+          metrics: ml2Response?.features || {}
+        },
+        { eventSource: 'ai' }
       );
 
       const refreshedPhoto = await Photo.findById(photoDoc._id);
       if (refreshedPhoto && typeof refreshedPhoto.addWebSocketEvent === 'function') {
-        await refreshedPhoto.addWebSocketEvent('fatigue_detection', {
+        await refreshedPhoto.addWebSocketEvent('driver_fatigue_alert', {
           fatigueLevel: ml2Response?.driver_state,
           fatigued: Boolean(ml2Response?.fatigued),
           confidence: Number(frame.confidence || 0),
           severity: Number(ml2Response?.severity || 0),
+          guard: {
+            minConfidence: ML_ALERT_MIN_CONFIDENCE,
+            minSeverity: ML_ALERT_MIN_SEVERITY,
+            minConsecutiveFrames: ML_ALERT_CONSECUTIVE_FRAMES,
+          },
         });
       }
+    } else if (ml2Response?.fatigued && !alertAllowed) {
+      log.info('fatigue_alert_suppressed', {
+        confidence: Number(frame.confidence || 0),
+        severity: Number(ml2Response?.severity || 0),
+        minConfidence: ML_ALERT_MIN_CONFIDENCE,
+        minSeverity: ML_ALERT_MIN_SEVERITY,
+        minConsecutiveFrames: ML_ALERT_CONSECUTIVE_FRAMES,
+      });
     }
 
     if (global.broadcastAIProcessingComplete) {
@@ -233,7 +301,11 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
       }
     }
 
-    logger.info(`AI queue processing completed for photo ${photoId} with prediction ${finalPrediction}`);
+    log.info('ai_processing_completed', {
+      prediction: finalPrediction,
+      fatigueDetected: Boolean(ml2Response?.fatigued),
+      processingTimeMs: totalProcessingTime,
+    });
     return {
       photo_id: photoId,
       prediction: finalPrediction,
@@ -244,24 +316,55 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
       ml2: ml2Response,
     };
   } catch (error) {
-    logger.error(`AI queue processing failed for photo ${photoId}:`, error);
+    log.error('ai_processing_failed', { error });
+    await monitoring.trackFailure('ml_service_failure', {
+      userId,
+      tripId: sessionId,
+      photoId,
+      requestId: null,
+      source: 'ai_processing_service',
+      message: error.message,
+    });
     const failedPhoto = await Photo.findById(photoDoc._id);
     if (failedPhoto && typeof failedPhoto.addWebSocketEvent === 'function') {
       await failedPhoto.addWebSocketEvent('ai_processing_failed', {
         message: error.message,
       });
     }
+    // Fallback behavior: gracefully mark completion with unknown prediction
     await Photo.updateOne(
       { _id: photoDoc._id },
       {
         $set: {
-          aiProcessingStatus: 'failed',
+          prediction: 'unknown',
+          aiProcessingStatus: 'completed',
           processingCompletedAt: new Date(),
         },
         $inc: { uploadRetries: 1 },
       }
     );
-    throw error;
+    if (global.broadcastAIProcessingComplete) {
+      global.broadcastAIProcessingComplete(
+        photoDoc.userId?.toString(),
+        photoId,
+        {
+          prediction: 'unknown',
+          fallback: true,
+          reason: 'ml_service_unavailable',
+          error: error.message,
+        },
+        Date.now() - startedAt
+      );
+    }
+    return {
+      photo_id: photoId,
+      prediction: 'unknown',
+      confidence: 0,
+      fatigue_detected: false,
+      processing_time: Date.now() - startedAt,
+      fallback: true,
+      error: error.message,
+    };
   }
 }
 
@@ -278,19 +381,7 @@ async function processPhotoForFatigue(photoData, sessionId, userId) {
     };
     
     // Make request to AI server
-    const response = await fetch(`${AI_SERVER_URL}/api/process-photo`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`AI server responded with status: ${response.status}`);
-    }
-    
-    const results = await response.json();
+    const results = await mlAdapter.aiProcessPhoto(payload);
     
     // Broadcast results if fatigue is detected
     if (results.fatigue_detected && global.broadcastFatigueDetection) {
@@ -365,15 +456,7 @@ async function processBatchPhotos(photos, sessionId, userId) {
 
 async function getAIProcessingStatus(photoId) {
   try {
-    const response = await fetch(`${AI_SERVER_URL}/api/status/${photoId}`, {
-      method: 'GET',
-    });
-    
-    if (!response.ok) {
-      throw new Error(`AI server responded with status: ${response.status}`);
-    }
-    
-    return await response.json();
+    return await mlAdapter.aiStatus(photoId);
   } catch (error) {
     logger.error('Failed to get AI processing status:', error);
     throw error;
@@ -382,14 +465,8 @@ async function getAIProcessingStatus(photoId) {
 
 async function healthCheck() {
   try {
-    const response = await fetch(`${AI_SERVER_URL}/health`, {
-      method: 'GET',
-      timeout: 5000,
-    });
-    
-    return response.ok;
-  } catch (error) {
-    logger.error('AI server health check failed:', error);
+    return await mlAdapter.aiHealth();
+  } catch (_error) {
     return false;
   }
 }

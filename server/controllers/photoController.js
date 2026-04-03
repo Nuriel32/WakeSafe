@@ -2,6 +2,7 @@ const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
 const { deleteFile, getUnprocessedPhotos: getGCSUnprocessedPhotos, updatePhotoProcessingStatus } = require('../services/gcpStorageService');
 const logger = require('../utils/logger');
+const cache = require('../services/cacheService');
 
 /**
  * Internal logic: deletes a single photo from GCS, MongoDB, and session reference.
@@ -67,26 +68,38 @@ async function deleteMultiplePhotos(photoIds = []) {
  */
 exports.getUnprocessedPhotos = async (req, res) => {
     try {
-        const { limit = 50, status = 'pending' } = req.query;
+        const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+        const status = req.query.status || 'pending';
+        const includeGcsMetadata = String(req.query.includeGcsMetadata || 'false') === 'true';
+        const cacheKey = `photos_unprocessed:${status}:${limit}:${includeGcsMetadata}`;
+
+        const cached = await cache.get(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
         
         // Get photos from MongoDB
         const photos = await Photo.find({ 
             aiProcessingStatus: status 
         })
         .sort({ uploadedAt: 1 })
-        .limit(parseInt(limit))
+        .limit(limit)
+        .select('sessionId userId gcsPath uploadedAt sequenceNumber captureTimestamp prediction aiProcessingStatus aiResults')
         .populate('sessionId', 'startTime endTime isActive')
-        .populate('userId', 'firstName lastName email');
+        .populate('userId', 'firstName lastName email')
+        .lean();
 
-        // Get corresponding GCS files
-        const gcsPhotos = await getGCSUnprocessedPhotos(status);
-        const gcsMap = new Map(gcsPhotos.map(p => [p.gcsPath, p]));
+        let gcsMap = new Map();
+        if (includeGcsMetadata) {
+            const gcsPhotos = await getGCSUnprocessedPhotos();
+            gcsMap = new Map(gcsPhotos.map(p => [p.gcsPath, p]));
+        }
 
         // Combine MongoDB and GCS data
         const enrichedPhotos = photos.map(photo => {
             const gcsData = gcsMap.get(photo.gcsPath);
             return {
-                ...photo.toObject(),
+                ...photo,
                 gcsUrl: `https://storage.googleapis.com/${process.env.GCS_BUCKET}/${photo.gcsPath}`,
                 gcsMetadata: gcsData?.metadata || {}
             };
@@ -94,11 +107,13 @@ exports.getUnprocessedPhotos = async (req, res) => {
 
         logger.info(`From photoController: Retrieved ${enrichedPhotos.length} unprocessed photos for AI analysis`);
         
-        res.json({
+        const payload = {
             photos: enrichedPhotos,
             count: enrichedPhotos.length,
             status
-        });
+        };
+        await cache.set(cacheKey, payload, 20);
+        res.json(payload);
     } catch (error) {
         logger.error(`From photoController: Failed to get unprocessed photos: ${error.message}`);
         res.status(500).json({ error: 'Failed to retrieve unprocessed photos' });
@@ -162,7 +177,13 @@ exports.updatePhotoAIResults = async (req, res) => {
 exports.getSessionPhotos = async (req, res) => {
     try {
         const { sessionId } = req.params;
-        const { limit = 100, prediction } = req.query;
+        const limit = Math.min(parseInt(req.query.limit || '100', 10), 300);
+        const { prediction } = req.query;
+        const cacheKey = `session_photos:${sessionId}:${prediction || 'all'}:${limit}`;
+        const cached = await cache.get(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
 
         const query = { sessionId };
         if (prediction) {
@@ -171,16 +192,20 @@ exports.getSessionPhotos = async (req, res) => {
 
         const photos = await Photo.find(query)
             .sort({ uploadedAt: -1 })
-            .limit(parseInt(limit))
-            .populate('userId', 'firstName lastName');
+            .limit(limit)
+            .select('userId gcsPath fileName name uploadedAt prediction aiProcessingStatus aiResults location')
+            .populate('userId', 'firstName lastName')
+            .lean();
 
         logger.info(`From photoController: Retrieved ${photos.length} photos for session ${sessionId}`);
 
-        res.json({
+        const payload = {
             photos,
             count: photos.length,
             sessionId
-        });
+        };
+        await cache.set(cacheKey, payload, 15);
+        res.json(payload);
     } catch (error) {
         logger.error(`From photoController: Failed to get session photos: ${error.message}`);
         res.status(500).json({ error: 'Failed to retrieve session photos' });
@@ -189,6 +214,11 @@ exports.getSessionPhotos = async (req, res) => {
 
 exports.getPhotoStats = async (req, res) => {
     try {
+        const cacheKey = 'photo_stats:global';
+        const cached = await cache.get(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
         const stats = await Photo.aggregate([
             {
                 $group: {
@@ -246,7 +276,7 @@ exports.getPhotoStats = async (req, res) => {
             ? (result.completedPhotos / result.totalPhotos) * 100 
             : 0;
 
-        res.json({
+        const payload = {
             totalPhotos: result.totalPhotos,
             processingStatus: {
                 pending: result.pendingPhotos,
@@ -266,7 +296,9 @@ exports.getPhotoStats = async (req, res) => {
                 successRate: Math.round(successRate * 100) / 100
             },
             timestamp: new Date().toISOString()
-        });
+        };
+        await cache.set(cacheKey, payload, 30);
+        res.json(payload);
 
     } catch (error) {
         logger.error(`Error getting photo stats: ${error.message}`);

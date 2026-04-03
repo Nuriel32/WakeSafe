@@ -7,6 +7,24 @@ function safeJsonParse(str) {
     try { return JSON.parse(str); } catch { return null; }
 }
 
+function sanitizeFileName(input) {
+    const normalized = String(input || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+    return normalized.slice(0, 128);
+}
+
+function isValidObjectId(value) {
+    return /^[a-fA-F0-9]{24}$/.test(String(value || ''));
+}
+
+function normalizeLocation(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const lat = Number(raw.latitude ?? raw.lat);
+    const lng = Number(raw.longitude ?? raw.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { lat, lng, accuracy: Number(raw.accuracy || 0), timestamp: Number(raw.timestamp || Date.now()) };
+}
+
 /**
  * Generate presigned URL for direct client upload to GCS
  * @route POST /api/upload/presigned
@@ -16,10 +34,14 @@ async function generatePresignedUrl(req, res) {
     try {
         const { fileName, sessionId, sequenceNumber, timestamp, location, clientMeta } = req.body;
         const userId = req.user.id;
+        const safeFileName = sanitizeFileName(fileName);
 
-        if (!fileName || !sessionId) {
+        if (!safeFileName || !sessionId) {
             logger.warn(`Presigned URL request missing fileName or sessionId. User: ${userId}`);
             return res.status(400).json({ error: 'Missing fileName or sessionId' });
+        }
+        if (!isValidObjectId(sessionId)) {
+            return res.status(400).json({ error: 'Invalid sessionId format' });
         }
 
         // Validate and load session owned by user
@@ -30,7 +52,7 @@ async function generatePresignedUrl(req, res) {
         }
 
         // Validate file extension
-        const extension = fileName.split('.').pop().toLowerCase();
+        const extension = safeFileName.split('.').pop().toLowerCase();
         const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
         if (!allowedExtensions.includes(extension)) {
             return res.status(400).json({ error: `Unsupported file format: ${extension}` });
@@ -38,7 +60,7 @@ async function generatePresignedUrl(req, res) {
 
         // Generate presigned URL
         const contentType = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
-        const gcsPath = `sessions/${sessionId}/photos/${fileName}`;
+        const gcsPath = `sessions/${sessionId}/photos/${safeFileName}`;
         
         console.log(`🔗 Generating presigned URL for: ${fileName}`);
         console.log(`📁 GCS Path: ${gcsPath}`);
@@ -55,14 +77,15 @@ async function generatePresignedUrl(req, res) {
         // Normalize metadata
         const seqNum = sequenceNumber !== undefined && sequenceNumber !== null ? parseInt(sequenceNumber) : null;
         const captureTs = timestamp !== undefined && timestamp !== null ? parseInt(timestamp) : Date.now();
-        const parsedLocation = typeof location === 'string' ? safeJsonParse(location) : location;
+        const parsedLocationRaw = typeof location === 'string' ? safeJsonParse(location) : location;
+        const parsedLocation = normalizeLocation(parsedLocationRaw);
         const parsedClientMeta = typeof clientMeta === 'string' ? safeJsonParse(clientMeta) : clientMeta;
 
         // Build response info
         const uploadInfo = {
             presignedUrl,
             gcsPath,
-            fileName,
+            fileName: safeFileName,
             contentType,
             uploadInfo: {
                 sequenceNumber: seqNum,
@@ -149,7 +172,7 @@ async function confirmUpload(req, res) {
             userId
         });
 
-        if (!photoId) {
+        if (!photoId || !isValidObjectId(photoId)) {
             return res.status(400).json({ error: 'Missing photoId' });
         }
 
@@ -215,6 +238,9 @@ async function getUploadStatus(req, res) {
     try {
         const { photoId } = req.params;
         const userId = req.user.id;
+        if (!isValidObjectId(photoId)) {
+            return res.status(400).json({ error: 'Invalid photoId format' });
+        }
 
         const photo = await Photo.findOne({ _id: photoId, userId });
         if (!photo) {

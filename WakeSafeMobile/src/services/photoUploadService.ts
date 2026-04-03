@@ -83,6 +83,10 @@ class PhotoUploadService {
     }
   }
 
+  private async sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   private async getPresignedUrl(
     fileName: string,
     sessionId: string,
@@ -101,30 +105,48 @@ class PhotoUploadService {
         hasToken: !!token
       });
 
-      const response = await fetch(`${CONFIG.API_BASE_URL}/upload/presigned`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fileName,
-          sessionId,
-          sequenceNumber,
-          timestamp,
-          location: location ? JSON.stringify(location) : null,
-          clientMeta: JSON.stringify({
-            deviceType: 'mobile',
-            appVersion: '1.0.0',
-            platform: 'react-native',
-          }),
+      const requestBody = {
+        fileName,
+        sessionId,
+        sequenceNumber,
+        timestamp,
+        location: location ? JSON.stringify(location) : null,
+        clientMeta: JSON.stringify({
+          deviceType: 'mobile',
+          appVersion: '1.0.0',
+          platform: 'react-native',
         }),
-      });
+      };
+      let response: Response | null = null;
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        response = await fetch(`${CONFIG.API_BASE_URL}/upload/presigned`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
 
-      console.log(`📡 Presigned URL response status: ${response.status}`);
+        if (response.status !== 429) break;
 
-      if (!response.ok) {
-        const errorData = await response.json();
+        let retryAfterSec = 2;
+        try {
+          const retryPayload = await response.clone().json();
+          retryAfterSec = Number(retryPayload?.retryAfter || retryAfterSec);
+        } catch {}
+
+        if (attempt < maxAttempts) {
+          console.warn(`Presigned URL throttled (429). Retrying in ${retryAfterSec}s (attempt ${attempt}/${maxAttempts})`);
+          await this.sleep(retryAfterSec * 1000);
+        }
+      }
+
+      console.log(`📡 Presigned URL response status: ${response?.status}`);
+
+      if (!response || !response.ok) {
+        const errorData = response ? await response.json() : { error: 'No response from server' };
         console.error(`❌ Presigned URL request failed:`, errorData);
         throw new Error(errorData.error || 'Failed to get presigned URL');
       }
@@ -212,22 +234,39 @@ class PhotoUploadService {
         hasToken: !!token
       });
 
-      const response = await fetch(`${CONFIG.API_BASE_URL}/upload/confirm`, {
+      let response: Response | null = null;
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        response = await fetch(`${CONFIG.API_BASE_URL}/upload/confirm`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-          photoId,
-          uploadSuccess: success,
-        }),
-      });
+            photoId,
+            uploadSuccess: success,
+          }),
+        });
 
-      console.log(`📤 Upload confirmation response status: ${response.status}`);
+        if (response.status !== 429) break;
 
-      if (!response.ok) {
-        const errorData = await response.json();
+        let retryAfterSec = 2;
+        try {
+          const retryPayload = await response.clone().json();
+          retryAfterSec = Number(retryPayload?.retryAfter || retryAfterSec);
+        } catch {}
+
+        if (attempt < maxAttempts) {
+          console.warn(`Upload confirm throttled (429). Retrying in ${retryAfterSec}s (attempt ${attempt}/${maxAttempts})`);
+          await this.sleep(retryAfterSec * 1000);
+        }
+      }
+
+      console.log(`📤 Upload confirmation response status: ${response?.status}`);
+
+      if (!response || !response.ok) {
+        const errorData = response ? await response.json() : { error: 'No response from server' };
         console.error(`❌ Upload confirmation failed:`, errorData);
         throw new Error(errorData.error || 'Failed to confirm upload');
       }

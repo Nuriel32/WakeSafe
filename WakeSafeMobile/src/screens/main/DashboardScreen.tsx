@@ -15,10 +15,14 @@ import { CONFIG } from '../../config';
 import { cameraService, SessionPhotoData } from '../../services/cameraService';
 import { photoUploadService, UploadProgress } from '../../services/photoUploadService';
 import { websocketService, FatigueAlert } from '../../services/websocketService';
+import { alertAudioService } from '../../services/alertAudioService';
+import { EmptyState } from '../../components/feedback/EmptyState';
+import { useToast } from '../../components/feedback/ToastProvider';
 
 export const DashboardScreen: React.FC = () => {
   const { user, logout, token } = useAuth();
-  const { currentSession, startSession, endSession, loading } = useSession();
+  const { showToast } = useToast();
+  const { currentSession, startSession, endSession, loading, loadCurrentSession, loadSessionHistory } = useSession();
   const [sessionDuration, setSessionDuration] = useState('00:00:00');
   const [isCapturing, setIsCapturing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
@@ -62,23 +66,29 @@ export const DashboardScreen: React.FC = () => {
     if (token && user) {
       // Set up WebSocket event handlers
       websocketService.setOnFatigueAlert(handleFatigueAlert);
-      websocketService.setOnConnectionChange(setIsWebSocketConnected);
+      websocketService.setOnConnectionChange((connected) => {
+        setIsWebSocketConnected(connected);
+        if (connected) {
+          loadCurrentSession();
+          loadSessionHistory();
+        }
+      });
       websocketService.setOnError((error) => {
         console.error('WebSocket error:', error);
-        Alert.alert('Connection Error', error);
+        showToast(`Connection error: ${error}`, 'error');
       });
 
       // Connect to WebSocket
       websocketService.connect(token).catch((error) => {
         console.error('Failed to connect to WebSocket:', error);
-        Alert.alert('Connection Failed', 'Unable to connect to real-time updates');
+        showToast('Unable to connect to real-time updates', 'error');
       });
 
       return () => {
         websocketService.disconnect();
       };
     }
-  }, [token, user]);
+  }, [token, user, loadCurrentSession, loadSessionHistory, showToast]);
 
   const handleFatigueAlert = (alert: FatigueAlert) => {
     console.log('Fatigue alert received:', alert);
@@ -103,8 +113,9 @@ export const DashboardScreen: React.FC = () => {
 
   const handleStartSession = async () => {
     try {
+      await alertAudioService.unlockFromUserGesture();
       const session = await startSession();
-      Alert.alert('Success', CONFIG.SUCCESS.SESSION_START);
+      showToast(CONFIG.SUCCESS.SESSION_START, 'success');
       
       // Emit WebSocket events
       if (session && user && token) {
@@ -113,21 +124,9 @@ export const DashboardScreen: React.FC = () => {
       }
       
       // Navigate to UploadScreen to start camera capture
-      Alert.alert(
-        'Session Started', 
-        'Session started successfully! Navigate to Upload tab to start camera capture.',
-        [
-          {
-            text: 'Go to Upload',
-            onPress: () => {
-              // Navigation will be handled by the tab navigator
-              console.log('User should navigate to Upload tab');
-            }
-          }
-        ]
-      );
+      showToast('Go to Upload tab to start camera capture', 'info');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to start session');
+      showToast(error.message || 'Failed to start session', 'error');
     }
   };
 
@@ -152,9 +151,9 @@ export const DashboardScreen: React.FC = () => {
               websocketService.emitSessionEnd(currentSession._id);
               
               await endSession(currentSession._id);
-              Alert.alert('Success', CONFIG.SUCCESS.SESSION_END);
+              showToast(CONFIG.SUCCESS.SESSION_END, 'success');
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to end session');
+              showToast(error.message || 'Failed to end session', 'error');
             }
           },
         },
@@ -210,7 +209,7 @@ export const DashboardScreen: React.FC = () => {
 
   const handleCaptureError = (error: string) => {
     console.error('Camera capture error:', error);
-    Alert.alert('Camera Error', error);
+    showToast(`Camera error: ${error}`, 'error');
   };
 
   const handleUploadProgress = (progress: UploadProgress) => {
@@ -379,6 +378,15 @@ export const DashboardScreen: React.FC = () => {
                 Confidence: {Math.round(lastFatigueAlert.confidence * 100)}%
               </Text>
             </View>
+          </View>
+        )}
+        {!lastFatigueAlert && (
+          <View style={styles.card}>
+            <EmptyState
+              icon="💤"
+              title="No fatigue alerts yet"
+              description="Alerts will appear here in real-time while your session is active."
+            />
           </View>
         )}
 

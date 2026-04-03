@@ -8,14 +8,20 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { useSession } from '../../hooks/useSession';
 import { CONFIG } from '../../config';
+import { spotifyService } from '../../services/spotifyService';
+import { useToast } from '../../components/feedback/ToastProvider';
+import { EmptyState } from '../../components/feedback/EmptyState';
+import { Skeleton } from '../../components/feedback/Skeleton';
 
 export const ProfileScreen: React.FC = () => {
   const { user, logout, token } = useAuth();
+  const { showToast } = useToast();
   const { sessionHistory } = useSession();
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -26,6 +32,13 @@ export const ProfileScreen: React.FC = () => {
     phone: user?.phone || '',
     carNumber: user?.carNumber || '',
   });
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [spotifyProfile, setSpotifyProfile] = useState<any>(null);
+  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [playlistTracks, setPlaylistTracks] = useState<any[]>([]);
+  const [currentPlayback, setCurrentPlayback] = useState<any>(null);
+  const [spotifyLoading, setSpotifyLoading] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -39,29 +52,60 @@ export const ProfileScreen: React.FC = () => {
     }
   }, [user]);
 
+  const loadSpotifyData = async () => {
+    if (!token) return;
+    setSpotifyLoading(true);
+    try {
+      const status = await spotifyService.getStatus(token);
+      setSpotifyConnected(status.isConnected);
+      if (!status.isConnected) {
+        setSpotifyProfile(null);
+        setPlaylists([]);
+        setCurrentPlayback(null);
+        return;
+      }
+      const [profile, playlistsRes, playback] = await Promise.all([
+        spotifyService.getMe(token),
+        spotifyService.getPlaylists(token),
+        spotifyService.getCurrentPlayback(token)
+      ]);
+      setSpotifyProfile(profile);
+      setPlaylists(playlistsRes.items || []);
+      setCurrentPlayback(playback || null);
+    } catch (error: any) {
+      showToast(error.message || 'Failed to load Spotify data', 'error');
+    } finally {
+      setSpotifyLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSpotifyData();
+  }, [token]);
+
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const validateForm = () => {
     if (!formData.firstName.trim()) {
-      Alert.alert('Error', 'First name is required');
+      showToast('First name is required', 'error');
       return false;
     }
     if (!formData.lastName.trim()) {
-      Alert.alert('Error', 'Last name is required');
+      showToast('Last name is required', 'error');
       return false;
     }
     if (!CONFIG.VALIDATION.EMAIL_REGEX.test(formData.email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      showToast('Please enter a valid email address', 'error');
       return false;
     }
     if (!CONFIG.VALIDATION.PHONE_REGEX.test(formData.phone)) {
-      Alert.alert('Error', 'Please enter a valid Israeli phone number');
+      showToast('Please enter a valid Israeli phone number', 'error');
       return false;
     }
     if (!CONFIG.VALIDATION.CAR_NUMBER_REGEX.test(formData.carNumber)) {
-      Alert.alert('Error', 'Please enter a valid Israeli car number');
+      showToast('Please enter a valid Israeli car number', 'error');
       return false;
     }
     return true;
@@ -82,14 +126,14 @@ export const ProfileScreen: React.FC = () => {
       });
 
       if (response.ok) {
-        Alert.alert('Success', 'Profile updated successfully');
+        showToast('Profile updated successfully', 'success');
         setEditing(false);
       } else {
         const error = await response.json();
         throw new Error(error.message || 'Failed to update profile');
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update profile');
+      showToast(error.message || 'Failed to update profile', 'error');
     } finally {
       setLoading(false);
     }
@@ -108,6 +152,40 @@ export const ProfileScreen: React.FC = () => {
         },
       ]
     );
+  };
+
+  const handleSpotifyConnect = async () => {
+    if (!token) return;
+    try {
+      await spotifyService.connect(token);
+      showToast('Finish Spotify login in browser, then tap Refresh', 'info');
+    } catch (error: any) {
+      showToast(error.message || 'Failed to start Spotify login', 'error');
+    }
+  };
+
+  const handleLoadPlaylistTracks = async (playlistId: string) => {
+    if (!token) return;
+    try {
+      const data = await spotifyService.getPlaylistTracks(token, playlistId);
+      setSelectedPlaylistId(playlistId);
+      setPlaylistTracks((data.items || []).map((item: any) => item.track).filter(Boolean));
+    } catch (error: any) {
+      showToast(error.message || 'Failed to load tracks', 'error');
+    }
+  };
+
+  const handlePlaybackAction = async (action: 'play' | 'pause' | 'next' | 'previous') => {
+    if (!token) return;
+    try {
+      if (action === 'play') await spotifyService.play(token);
+      if (action === 'pause') await spotifyService.pause(token);
+      if (action === 'next') await spotifyService.next(token);
+      if (action === 'previous') await spotifyService.previous(token);
+      await loadSpotifyData();
+    } catch (error: any) {
+      showToast(error.message || 'Playback action failed', 'error');
+    }
   };
 
   const getTotalSessions = () => {
@@ -284,6 +362,115 @@ export const ProfileScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Spotify</Text>
+          </View>
+          {spotifyLoading ? (
+            <View style={styles.spotifySkeletonWrap}>
+              <Skeleton width="45%" height={16} />
+              <Skeleton width="100%" height={42} radius={10} />
+              <Skeleton width="100%" height={62} radius={10} />
+              <Skeleton width="100%" height={62} radius={10} />
+            </View>
+          ) : (
+            <>
+              <View style={styles.spotifyRow}>
+                <Text style={styles.infoLabel}>Connection</Text>
+                <Text style={[styles.infoValue, { color: spotifyConnected ? '#10b981' : '#ef4444' }]}>
+                  {spotifyConnected ? 'Connected' : 'Not connected'}
+                </Text>
+              </View>
+
+              {!spotifyConnected ? (
+                <TouchableOpacity style={styles.editButton} onPress={handleSpotifyConnect}>
+                  <Text style={styles.editButtonText}>Connect Spotify</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.editButton} onPress={loadSpotifyData}>
+                    <Text style={styles.editButtonText}>Refresh</Text>
+                  </TouchableOpacity>
+
+                  {spotifyProfile && (
+                    <View style={styles.infoItem}>
+                      <Text style={styles.infoLabel}>Spotify User</Text>
+                      <Text style={styles.infoValue}>{spotifyProfile.display_name || spotifyProfile.id}</Text>
+                    </View>
+                  )}
+
+                  <Text style={styles.sectionSubtitle}>Playlists</Text>
+                  {playlists.length === 0 ? (
+                    <EmptyState
+                      icon="🎵"
+                      title="No playlists found"
+                      description="Create a playlist in Spotify and refresh."
+                    />
+                  ) : (
+                    playlists.slice(0, 8).map((playlist) => (
+                      <TouchableOpacity
+                        key={playlist.id}
+                        style={[styles.playlistItem, selectedPlaylistId === playlist.id && styles.playlistItemSelected]}
+                        onPress={() => handleLoadPlaylistTracks(playlist.id)}
+                      >
+                        <View style={styles.playlistRow}>
+                          {playlist.images?.[0]?.url ? (
+                            <Image source={{ uri: playlist.images[0].url }} style={styles.playlistImage} />
+                          ) : null}
+                          <View style={styles.playlistTextWrap}>
+                            <Text style={styles.playlistName}>{playlist.name}</Text>
+                            <Text style={styles.playlistMeta}>{playlist.tracks?.total || 0} tracks</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    ))
+                  )}
+
+                  <Text style={styles.sectionSubtitle}>Player</Text>
+                  <View style={styles.playerRow}>
+                    <TouchableOpacity style={styles.playerBtn} onPress={() => handlePlaybackAction('previous')}>
+                      <Text style={styles.playerBtnText}>Prev</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.playerBtn} onPress={() => handlePlaybackAction('play')}>
+                      <Text style={styles.playerBtnText}>Play</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.playerBtn} onPress={() => handlePlaybackAction('pause')}>
+                      <Text style={styles.playerBtnText}>Pause</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.playerBtn} onPress={() => handlePlaybackAction('next')}>
+                      <Text style={styles.playerBtnText}>Next</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.mutedText}>
+                    {currentPlayback?.item
+                      ? `${currentPlayback.item.name} - ${currentPlayback.item.artists?.map((a: any) => a.name).join(', ')}`
+                      : 'No active playback device. Open Spotify on a Premium account device.'}
+                  </Text>
+                  {currentPlayback?.item?.album?.images?.[0]?.url ? (
+                    <Image source={{ uri: currentPlayback.item.album.images[0].url }} style={styles.currentTrackImage} />
+                  ) : null}
+
+                  <Text style={styles.sectionSubtitle}>Tracks</Text>
+                  {playlistTracks.length === 0 ? (
+                    <EmptyState
+                      icon="🎧"
+                      title="No tracks selected"
+                      description="Pick a playlist to browse tracks."
+                    />
+                  ) : (
+                    playlistTracks.slice(0, 10).map((track) => (
+                      <View key={track.id} style={styles.trackItem}>
+                        <Text style={styles.trackTitle}>{track.name}</Text>
+                        <Text style={styles.trackMeta}>{track.artists?.map((a: any) => a.name).join(', ')}</Text>
+                      </View>
+                    ))
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </View>
+
         {/* App Info */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -440,5 +627,94 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1e293b',
     fontWeight: '500',
+  },
+  spotifyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionSubtitle: {
+    marginTop: 16,
+    marginBottom: 8,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  mutedText: {
+    color: '#64748b',
+    fontSize: 13,
+  },
+  playlistItem: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    backgroundColor: '#f8fafc',
+  },
+  playlistItemSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+  },
+  playlistName: {
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  playlistMeta: {
+    color: '#64748b',
+    marginTop: 2,
+    fontSize: 12,
+  },
+  playlistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playlistImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    marginRight: 10,
+  },
+  playlistTextWrap: {
+    flex: 1,
+  },
+  playerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  playerBtn: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    marginRight: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  playerBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  currentTrackImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  trackItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    paddingVertical: 8,
+  },
+  trackTitle: {
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  trackMeta: {
+    color: '#64748b',
+    fontSize: 12,
+  },
+  spotifySkeletonWrap: {
+    gap: 10,
   },
 });

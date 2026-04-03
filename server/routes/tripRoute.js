@@ -9,7 +9,7 @@ const controller = require('../controllers/TripController');
  * @apiGroup Trip
  * @apiSuccess {Object} tripId Created trip ID
  */
-router.post('/trips', auth, controller.createTrip);
+router.post('/', auth, controller.createTrip);
 
 /**
  * @api {post} /api/trips/detect-fatigue Detect fatigue and upload image
@@ -20,7 +20,7 @@ router.post('/trips', auth, controller.createTrip);
  * @apiParam {Object} headPose Pose object with pitch/yaw/roll
  * @apiParam {String} tripId Trip ID
  */
-router.post('/trips/detect-fatigue', auth, controller.detectFatigue);
+router.post('/detect-fatigue', auth, controller.detectFatigue);
 
 /**
  * @api {delete} /api/trips/images/recent Delete recent uploaded images
@@ -28,6 +28,6 @@ router.post('/trips/detect-fatigue', auth, controller.detectFatigue);
  * @apiGroup Trip
  * @apiSuccess {Number} deletedCount Number of images deleted
  */
-router.delete('/trips/images/recent', auth, controller.deleteImagesFromLastMinute);
+router.delete('/images/recent', auth, controller.deleteImagesFromLastMinute);
 
 module.exports = router;

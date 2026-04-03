@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { CONFIG } from '../config';
+import { alertAudioService } from './alertAudioService';
 
 export interface FatigueAlert {
   sessionId: string;
@@ -14,6 +15,38 @@ export interface FatigueAlert {
     message: string;
     actionRequired: boolean;
   };
+}
+
+export interface DriverFatigueAlertEvent {
+  type: 'fatigue_alert';
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+  tripId: string;
+  sessionId: string;
+  timestamp: string;
+  confidenceScore: number;
+  fatigueLevel: number;
+  source: string;
+  recommendation?: string;
+  metrics?: any;
+  photoId?: string;
+}
+
+export interface FatigueSafeStopEvent {
+  type: 'fatigue_safe_stop';
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+  tripId: string;
+  sessionId: string;
+  timestamp: string;
+  placeName: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  placeId: string;
+  distanceMeters?: number | null;
+  durationSeconds?: number | null;
+  googleMapsUrl: string;
 }
 
 export interface PhotoCaptureEvent {
@@ -35,6 +68,10 @@ class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private connectionPromise: Promise<boolean> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private lastHeartbeatAckAt = 0;
+  private seenEventIds = new Set<string>();
+  private readonly seenEventIdsMax = 300;
 
   // Event handlers
   private onFatigueAlert?: (alert: FatigueAlert) => void;
@@ -47,6 +84,7 @@ class WebSocketService {
   private onUploadCompleted?: (data: any) => void;
   private onUploadFailed?: (data: any) => void;
   private onAIProcessingComplete?: (data: any) => void;
+  private onFatigueSafeStop?: (data: FatigueSafeStopEvent) => void;
 
   connect(token: string): Promise<boolean> {
     // If already connecting, return the existing promise
@@ -58,7 +96,6 @@ class WebSocketService {
       try {
         console.log('🔌 Connecting to WebSocket server...');
         console.log('WebSocket URL:', CONFIG.WS_URL);
-        console.log('Token (first 20 chars):', token ? token.substring(0, 20) + '...' : 'NO TOKEN');
         
         // Disconnect existing connection if any
         if (this.socket) {
@@ -67,14 +104,15 @@ class WebSocketService {
         
         this.socket = io(CONFIG.WS_URL, {
           auth: { token },
-          query: { token },
-          extraHeaders: { Authorization: `Bearer ${token}` },
+          query: {},
           transports: ['websocket', 'polling'],
           timeout: 10000,
           reconnection: true,
-          reconnectionAttempts: this.maxReconnectAttempts,
+          reconnectionAttempts: 0,
           reconnectionDelay: this.reconnectDelay,
-          forceNew: true,
+          reconnectionDelayMax: 10000,
+          randomizationFactor: 0.5,
+          forceNew: false,
           upgrade: true,
           rememberUpgrade: false
         });
@@ -86,6 +124,7 @@ class WebSocketService {
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.onConnectionChange?.(true);
+          this.startHeartbeat();
           resolve(true);
         });
 
@@ -103,6 +142,7 @@ class WebSocketService {
           console.error('Token available:', !!token);
           this.isConnected = false;
           this.onConnectionChange?.(false);
+          this.stopHeartbeat();
           this.onError?.(`Connection failed: ${error.message}`);
           this.connectionPromise = null;
           reject(error);
@@ -113,6 +153,7 @@ class WebSocketService {
           console.log('👋 WebSocket disconnected:', reason);
           this.isConnected = false;
           this.onConnectionChange?.(false);
+          this.stopHeartbeat();
         });
 
         // Reconnected
@@ -121,6 +162,7 @@ class WebSocketService {
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.onConnectionChange?.(true);
+          this.startHeartbeat();
         });
 
         // Reconnect attempt
@@ -148,6 +190,36 @@ class WebSocketService {
         this.socket.on('fatigue_detection', (data: FatigueAlert) => {
           console.log('🚨 Received fatigue detection:', data);
           this.onFatigueAlert?.(data);
+        });
+
+        // New dedicated fatigue alert event
+        this.socket.on('driver_fatigue_alert', (data: DriverFatigueAlertEvent) => {
+          if (this.isDuplicateEvent((data as any)?.eventId)) return;
+          console.log('🚨 Received driver_fatigue_alert:', data);
+          alertAudioService.playFatigueAlert().catch((error) => {
+            console.warn('Failed to play fatigue alert sound:', error);
+          });
+          const normalized: FatigueAlert = {
+            sessionId: data.sessionId,
+            fatigueLevel: data.severity === 'critical' ? 'sleeping' : 'drowsy',
+            confidence: data.confidenceScore,
+            photoId: data.photoId,
+            aiResults: data.metrics,
+            timestamp: Date.parse(data.timestamp) || Date.now(),
+            alert: {
+              type: data.type,
+              severity: data.severity === 'critical' ? 'high' : data.severity === 'warning' ? 'medium' : 'low',
+              message: data.message,
+              actionRequired: data.severity === 'critical'
+            }
+          };
+          this.onFatigueAlert?.(normalized);
+        });
+
+        this.socket.on('fatigue_safe_stop', (data: FatigueSafeStopEvent) => {
+          if (this.isDuplicateEvent((data as any)?.eventId)) return;
+          console.log('🛑 Received fatigue_safe_stop:', data);
+          this.onFatigueSafeStop?.(data);
         });
 
         // Photo capture confirmation
@@ -184,6 +256,7 @@ class WebSocketService {
 
         // AI processing complete
         this.socket.on('ai_processing_complete', (data) => {
+          if (this.isDuplicateEvent((data as any)?.eventId)) return;
           console.log('🤖 AI processing complete:', data);
           this.onAIProcessingComplete?.(data);
         });
@@ -214,6 +287,11 @@ class WebSocketService {
           console.log('🏓 Pong received:', data);
         });
 
+        this.socket.on('heartbeat_ack', (data) => {
+          this.lastHeartbeatAckAt = Date.now();
+          console.log('💓 Heartbeat ack:', data);
+        });
+
         // Notifications
         this.socket.on('notification', (data) => {
           console.log('📢 Notification received:', data);
@@ -236,6 +314,7 @@ class WebSocketService {
       this.socket = null;
       this.isConnected = false;
       this.connectionPromise = null;
+      this.stopHeartbeat();
       this.onConnectionChange?.(false);
     }
   }
@@ -305,6 +384,40 @@ class WebSocketService {
     }
   }
 
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.lastHeartbeatAckAt = Date.now();
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.socket || !this.isConnected) return;
+      const now = Date.now();
+      if (this.lastHeartbeatAckAt > 0 && now - this.lastHeartbeatAckAt > 70000) {
+        console.warn('⚠️ Heartbeat stale, forcing reconnect');
+        this.socket.disconnect();
+        this.socket.connect();
+        return;
+      }
+      this.socket.emit('heartbeat', { timestamp: now });
+    }, 25000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private isDuplicateEvent(eventId?: string): boolean {
+    if (!eventId) return false;
+    if (this.seenEventIds.has(eventId)) return true;
+    this.seenEventIds.add(eventId);
+    if (this.seenEventIds.size > this.seenEventIdsMax) {
+      const first = this.seenEventIds.values().next().value;
+      if (first) this.seenEventIds.delete(first);
+    }
+    return false;
+  }
+
   // ---- Event Listener Setters ----
   
   setOnFatigueAlert(handler: (alert: FatigueAlert) => void): void {
@@ -345,6 +458,10 @@ class WebSocketService {
 
   setOnAIProcessingComplete(handler: (data: any) => void): void {
     this.onAIProcessingComplete = handler;
+  }
+
+  setOnFatigueSafeStop(handler: (data: FatigueSafeStopEvent) => void): void {
+    this.onFatigueSafeStop = handler;
   }
 
   // ---- Getters ----

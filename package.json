@@ -1,0 +1,15 @@
+{
+  "name": "wakesafe-workspace",
+  "private": true,
+  "scripts": {
+    "setup": "npm install --prefix server && npm install --prefix WakeSafeMobile",
+    "dev:server": "npm run dev --prefix server",
+    "dev:mobile": "npm run start --prefix WakeSafeMobile",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:mobile\"",
+    "test:server": "npm test --prefix server",
+    "lint:server-tests": "npm run test --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
