@@ -12,7 +12,7 @@ if [[ -z "$ACTION" ]]; then
 fi
 
 if [[ ${#SERVICES[@]} -eq 0 ]]; then
-  SERVICES=("wakesafe-api" "ml1-service" "ml2-service")
+  SERVICES=("wakesafe-api" "wakesafe-ml1-service" "wakesafe-ml2-service")
 fi
 
 START_MIN_INSTANCES="${START_MIN_INSTANCES:-1}"
