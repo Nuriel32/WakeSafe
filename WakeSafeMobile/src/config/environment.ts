@@ -39,8 +39,8 @@ const environments: Record<Environment, EnvironmentConfig> = {
     SESSION_UPDATE_INTERVAL: 1000,
   },
   local: {
-    API_BASE_URL: 'http://192.168.1.133:5000/api',
-    WS_URL: 'http://192.168.1.133:5000',
+    API_BASE_URL: 'http://localhost:5000/api',
+    WS_URL: 'http://localhost:5000',
     DEBUG: true,
     LOG_LEVEL: 'debug',
     NODE_ENV: 'development',
@@ -84,11 +84,12 @@ const environments: Record<Environment, EnvironmentConfig> = {
 
 // Get current environment
 export const getCurrentEnvironment = (): Environment => {
-  // Read ENV from Expo extra or public env. Fallback to 'local'.
+  // Read ENV from EXPO_PUBLIC first, then Expo extra. Fallback to 'local'.
   try {
-    const envFromExtra = (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.ENV)
-      || (process.env.EXPO_PUBLIC_ENV as string | undefined);
-    const normalized = envFromExtra === 'development' ? 'gcpdev' : envFromExtra;
+    const envFromPublic = process.env.EXPO_PUBLIC_ENV as string | undefined;
+    const envFromExtra = (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.ENV) as string | undefined;
+    const selected = envFromPublic || envFromExtra;
+    const normalized = selected === 'development' ? 'gcpdev' : selected;
     const env = (normalized || 'local') as Environment;
     if (['local', 'gcpdev', 'staging', 'production'].includes(env)) {
       return env as Environment;
