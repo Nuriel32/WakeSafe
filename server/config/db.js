@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 
 async function connectDB() {
-  const uri = process.env.MONGO_URI;
+  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/';
   if (!uri) {
     console.warn('[DB] MONGO_URI is not set; skipping Mongo connection');
     return;
