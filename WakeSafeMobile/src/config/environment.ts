@@ -2,7 +2,7 @@
 // This file helps manage different environments (local, staging, production)
 import Constants from 'expo-constants';
 
-export type Environment = 'development' | 'local' | 'staging' | 'production';
+export type Environment = 'local' | 'gcpdev' | 'staging' | 'production';
 
 export interface EnvironmentConfig {
   API_BASE_URL: string;
@@ -24,7 +24,7 @@ export interface EnvironmentConfig {
 
 // Environment configurations
 const environments: Record<Environment, EnvironmentConfig> = {
-  development: {
+  gcpdev: {
     API_BASE_URL: 'https://wakesafe-api-227831302277.us-central1.run.app/api',
     WS_URL: 'https://wakesafe-api-227831302277.us-central1.run.app',
     DEBUG: true,
@@ -84,16 +84,17 @@ const environments: Record<Environment, EnvironmentConfig> = {
 
 // Get current environment
 export const getCurrentEnvironment = (): Environment => {
-  // Read ENV from Expo extra or public env. Fallback to 'development'.
+  // Read ENV from Expo extra or public env. Fallback to 'local'.
   try {
     const envFromExtra = (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.ENV)
       || (process.env.EXPO_PUBLIC_ENV as string | undefined);
-    const env = (envFromExtra || 'development') as Environment;
-    if (['development', 'local', 'staging', 'production'].includes(env)) {
+    const normalized = envFromExtra === 'development' ? 'gcpdev' : envFromExtra;
+    const env = (normalized || 'local') as Environment;
+    if (['local', 'gcpdev', 'staging', 'production'].includes(env)) {
       return env as Environment;
     }
   } catch {}
-  return 'development';
+  return 'local';
 };
 
 // Get environment configuration
