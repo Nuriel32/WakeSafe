@@ -13,8 +13,12 @@ if (process.env.NODE_ENV === 'production') {
   // In production, load from .env file
   dotenv.config();
 } else {
-  // In development, try env.local first, then fallback to .env
-  dotenv.config({ path: './env.local' });
+  // In development, choose profile-specific env:
+  // ENV_PROFILE=local   -> ./env.local
+  // ENV_PROFILE=gcpdev  -> ./env.gcp-dev
+  const profile = (process.env.ENV_PROFILE || 'local').toLowerCase();
+  const envPath = profile === 'gcpdev' ? './env.gcp-dev' : './env.local';
+  dotenv.config({ path: envPath });
   if (!process.env.MONGO_URI) {
     dotenv.config();
   }
