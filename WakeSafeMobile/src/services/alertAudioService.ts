@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, Vibration } from 'react-native';
 
 class AlertAudioService {
   private lastPlayedAt = 0;
@@ -35,10 +35,16 @@ class AlertAudioService {
   }
 
   async playFatigueAlert(): Promise<void> {
-    if (!this.isWeb()) return;
-
     const now = Date.now();
     if (now - this.lastPlayedAt < this.cooldownMs) return;
+    this.lastPlayedAt = now;
+
+    // Native fallback: strong vibration pattern for immediate attention.
+    if (!this.isWeb()) {
+      Vibration.cancel();
+      Vibration.vibrate([0, 800, 250, 800, 250, 900], false);
+      return;
+    }
 
     const ctx = this.getContext();
     if (!ctx) return;
@@ -73,7 +79,6 @@ class AlertAudioService {
     const t0 = ctx.currentTime + 0.01;
     playTone(880, t0, 0.18);
     playTone(660, t0 + 0.24, 0.22);
-    this.lastPlayedAt = now;
   }
 }
 

@@ -122,6 +122,14 @@ export const UploadScreen: React.FC = () => {
     websocketService.setOnUploadFailed(handleWebSocketUploadFailed);
     websocketService.setOnAIProcessingComplete(handleAIProcessingComplete);
     websocketService.setOnFatigueSafeStop(handleFatigueSafeStop);
+    websocketService.setOnNotification((data) => {
+      const message = data?.message || 'Important safety alert received';
+      if (data?.type === 'warning' || data?.type === 'error') {
+        Alert.alert('WakeSafe Alert', message, [{ text: 'OK' }], { cancelable: false });
+      } else {
+        showToast(message, 'info');
+      }
+    });
     websocketService.setOnConnectionChange((connected) => {
       if (connected) {
         loadCurrentSession();

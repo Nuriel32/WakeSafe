@@ -85,6 +85,7 @@ class WebSocketService {
   private onUploadFailed?: (data: any) => void;
   private onAIProcessingComplete?: (data: any) => void;
   private onFatigueSafeStop?: (data: FatigueSafeStopEvent) => void;
+  private onNotification?: (data: any) => void;
 
   connect(token: string): Promise<boolean> {
     // If already connecting, return the existing promise
@@ -295,6 +296,12 @@ class WebSocketService {
         // Notifications
         this.socket.on('notification', (data) => {
           console.log('📢 Notification received:', data);
+          if ((data?.type === 'warning' || data?.type === 'error') && /fatigue|wake/i.test(String(data?.message || ''))) {
+            alertAudioService.playFatigueAlert().catch((error) => {
+              console.warn('Failed to play notification alert sound:', error);
+            });
+          }
+          this.onNotification?.(data);
         });
 
       } catch (error) {
@@ -462,6 +469,10 @@ class WebSocketService {
 
   setOnFatigueSafeStop(handler: (data: FatigueSafeStopEvent) => void): void {
     this.onFatigueSafeStop = handler;
+  }
+
+  setOnNotification(handler: (data: any) => void): void {
+    this.onNotification = handler;
   }
 
   // ---- Getters ----
