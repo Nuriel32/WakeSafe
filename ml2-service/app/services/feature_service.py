@@ -12,7 +12,9 @@ class TemporalFeatures:
 
 
 class TemporalFeatureService:
-    closed_states = {"CLOSED", "PARTIAL"}
+    # Count only explicit CLOSED frames as eye closure.
+    # Treating PARTIAL as closed caused aggressive false positives.
+    closed_states = {"CLOSED"}
 
     def extract(self, sequence: list[SequenceItem]) -> TemporalFeatures:
         ordered = sorted(sequence, key=lambda item: item.timestamp)

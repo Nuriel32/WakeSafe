@@ -216,7 +216,7 @@ exports.getSessionPhotos = async (req, res) => {
         const photos = await Photo.find(query)
             .sort({ uploadedAt: -1 })
             .limit(limit)
-            .select('sessionId userId gcsPath fileName name uploadedAt createdAt prediction aiProcessingStatus aiResults location')
+            .select('sessionId userId gcsPath uploadedAt createdAt prediction aiProcessingStatus aiResults location')
             .populate('userId', 'firstName lastName')
             .lean();
 
@@ -259,7 +259,7 @@ exports.getSleepingGalleryByRide = async (req, res) => {
             aiProcessingStatus: 'completed'
         })
             .sort({ uploadedAt: -1 })
-            .select('sessionId userId gcsPath fileName name uploadedAt createdAt prediction aiProcessingStatus aiResults location')
+            .select('sessionId userId gcsPath uploadedAt createdAt prediction aiProcessingStatus aiResults location')
             .lean();
 
         const bySession = new Map();
