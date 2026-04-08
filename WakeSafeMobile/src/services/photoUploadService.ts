@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import { PhotoCaptureResult } from './cameraService';
+import { safeParseJson, toUserMessage } from '../utils/network';
 
 export interface PresignedUrlResponse {
   presignedUrl: string;
@@ -82,8 +83,10 @@ class PhotoUploadService {
       console.log(`Photo #${photo.sequenceNumber} uploaded successfully`);
 
     } catch (error) {
-      console.error(`Upload failed for photo #${photo.sequenceNumber}:`, error);
-      this.onUploadFailed?.(photo.sequenceNumber.toString(), error instanceof Error ? error.message : 'Upload failed');
+      const message = toUserMessage(error, CONFIG.ERRORS.UPLOAD);
+      console.error(`Upload failed for photo #${photo.sequenceNumber}:`, message);
+      this.onUploadFailed?.(photo.sequenceNumber.toString(), message);
+      throw new Error(message);
     }
   }
 
@@ -120,16 +123,24 @@ class PhotoUploadService {
       type: 'image/jpeg',
     } as any);
 
-    const response = await fetch(`${CONFIG.API_BASE_URL}/upload`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    let response: Response;
+    try {
+      response = await fetch(`${CONFIG.API_BASE_URL}/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await safeParseJson(response);
       throw new Error(errorData.error || 'Local upload failed');
     }
   }
@@ -197,9 +208,9 @@ class PhotoUploadService {
       console.log(`📡 Presigned URL response status: ${response?.status}`);
 
       if (!response || !response.ok) {
-        const errorData = response ? await response.json() : { error: 'No response from server' };
+        const errorData = response ? await safeParseJson(response) : { error: 'No response from server' };
         console.error(`❌ Presigned URL request failed:`, errorData);
-        throw new Error(errorData.error || 'Failed to get presigned URL');
+        throw new Error(errorData?.error || errorData?.message || 'Failed to get presigned URL');
       }
 
       const data = await response.json();
@@ -317,9 +328,9 @@ class PhotoUploadService {
       console.log(`📤 Upload confirmation response status: ${response?.status}`);
 
       if (!response || !response.ok) {
-        const errorData = response ? await response.json() : { error: 'No response from server' };
+        const errorData = response ? await safeParseJson(response) : { error: 'No response from server' };
         console.error(`❌ Upload confirmation failed:`, errorData);
-        throw new Error(errorData.error || 'Failed to confirm upload');
+        throw new Error(errorData?.error || errorData?.message || 'Failed to confirm upload');
       }
 
       const result = await response.json();

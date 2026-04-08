@@ -44,6 +44,13 @@ function validateMl2Response(response) {
   }
 }
 
+function mapEarToEyeState(ear) {
+  if (ear == null || Number.isNaN(Number(ear))) return 'UNKNOWN';
+  const value = Number(ear);
+  // Be conservative: only strong closure is considered CLOSED.
+  return value < 0.18 ? 'CLOSED' : 'OPEN';
+}
+
 function normalizeGcsPath(gcsPath) {
   const bucket = process.env.GCS_BUCKET;
   if (bucket && gcsPath.startsWith(`gs://${bucket}/`)) {
@@ -74,12 +81,7 @@ async function buildTemporalSequence(sessionId, currentFrame) {
     .filter((item) => item?.aiResults?.processedAt)
     .map((item) => ({
       timestamp: new Date(item.aiResults.processedAt).toISOString(),
-      eye_state: (() => {
-        if (item.aiResults?.ear == null) return 'UNKNOWN';
-        if (item.aiResults.ear < 0.18) return 'CLOSED';
-        if (item.aiResults.ear < 0.24) return 'PARTIAL';
-        return 'OPEN';
-      })(),
+      eye_state: mapEarToEyeState(item.aiResults?.ear),
       confidence: Number(item.aiResults?.confidence || 0),
       ear: item.aiResults?.ear ?? null,
       head_pose: {
@@ -280,6 +282,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
     }
 
     if (global.broadcastAIProcessingComplete) {
+      const alertEmitted = Boolean(ml2Response?.fatigued && alertAllowed);
       global.broadcastAIProcessingComplete(
         photoDoc.userId?.toString(),
         photoId,
@@ -287,6 +290,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
           ml1: ml1Response,
           ml2: ml2Response,
           prediction: finalPrediction,
+          alertEmitted,
         },
         totalProcessingTime
       );
