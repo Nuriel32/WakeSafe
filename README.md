@@ -80,6 +80,28 @@ powershell -ExecutionPolicy Bypass -File .\scripts\manage-gcp-services.ps1 stop
 powershell -ExecutionPolicy Bypass -File .\scripts\manage-gcp-services.ps1 start
 ```
 
+## Local Redis (Docker Compose)
+
+Start local Redis for development:
+
+```bash
+npm run redis:up
+```
+
+View logs:
+
+```bash
+npm run redis:logs
+```
+
+Stop Redis:
+
+```bash
+npm run redis:down
+```
+
+Compose file used: `docker-compose.local.yml` (maps `localhost:6379`).
+
 ## CI/CD Deployment Behavior
 
 GitHub Actions deployment workflows now run on:

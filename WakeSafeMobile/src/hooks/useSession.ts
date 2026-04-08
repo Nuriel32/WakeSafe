@@ -20,6 +20,13 @@ type SessionContextType = SessionState & {
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
+const unwrapApiData = <T = any>(payload: any): T => {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    return payload.data as T;
+  }
+  return payload as T;
+};
+
 export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const { token } = useAuth();
   const [sessionState, setSessionState] = useState<SessionState>({
@@ -45,7 +52,8 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
       });
 
       if (response.ok) {
-        const session = await response.json();
+        const raw = await response.json();
+        const session = unwrapApiData<Session | null>(raw);
         setSessionState(prev => ({
           ...prev,
           currentSession: session,
@@ -82,20 +90,21 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
         headers: getAuthHeaders(),
       });
 
-      const data = await response.json();
+      const raw = await response.json();
+      const session = unwrapApiData<Session>(raw);
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to start session');
+        throw new Error(raw.message || 'Failed to start session');
       }
 
       setSessionState(prev => ({
         ...prev,
-        currentSession: data,
+        currentSession: session,
         loading: false,
         error: null,
       }));
 
-      return data;
+      return session;
     } catch (error: any) {
       setSessionState(prev => ({
         ...prev,
@@ -168,7 +177,8 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
       });
 
       if (response.ok) {
-        const sessions = await response.json();
+        const raw = await response.json();
+        const sessions = unwrapApiData<Session[]>(raw);
         setSessionState(prev => ({
           ...prev,
           sessionHistory: sessions,

@@ -8,8 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "env:development": "node switch-env.js development",
     "env:local": "node switch-env.js local",
+    "env:gcpdev": "node switch-env.js gcpdev",
     "env:staging": "node switch-env.js staging",
     "env:production": "node switch-env.js production"
   },
