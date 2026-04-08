@@ -29,21 +29,24 @@ export interface Photo {
   sessionId: string;
   userId: string;
   gcsPath: string;
+  fileUrl?: string;
   name: string;
   location?: {
-    latitude: number;
-    longitude: number;
-    accuracy: number;
-    timestamp: number;
+    latitude?: number;
+    longitude?: number;
+    lat?: number;
+    lng?: number;
+    accuracy?: number;
+    timestamp?: number;
   };
   clientMeta?: {
     userAgent: string;
     timestamp: number;
     fileSize: number;
   };
-  prediction: 'pending' | 'alert' | 'normal' | 'error';
-  aiProcessingStatus: 'pending' | 'processing' | 'completed' | 'error';
-  uploadStatus: 'pending' | 'completed' | 'error';
+  prediction: 'pending' | 'alert' | 'drowsy' | 'sleeping' | 'unknown' | 'normal' | 'error';
+  aiProcessingStatus: 'pending' | 'processing' | 'completed' | 'failed' | 'error';
+  uploadStatus: 'pending' | 'uploading' | 'uploaded' | 'completed' | 'failed' | 'error';
   createdAt: string;
   updatedAt: string;
 }
