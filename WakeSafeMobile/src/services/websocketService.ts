@@ -259,6 +259,31 @@ class WebSocketService {
         this.socket.on('ai_processing_complete', (data) => {
           if (this.isDuplicateEvent((data as any)?.eventId)) return;
           console.log('🤖 AI processing complete:', data);
+          const prediction = String(data?.results?.prediction || data?.results?.ml2?.driver_state || '').toLowerCase();
+          const fatigued = Boolean(data?.results?.ml2?.fatigued);
+          if (fatigued || prediction === 'drowsy' || prediction === 'sleeping') {
+            alertAudioService.playFatigueAlert().catch((error) => {
+              console.warn('Failed to play AI-processing fatigue alert sound:', error);
+            });
+            const normalized: FatigueAlert = {
+              sessionId: data?.results?.ml2?.session_id || data?.results?.ml1?.session_id || '',
+              fatigueLevel: prediction === 'sleeping' ? 'sleeping' : 'drowsy',
+              confidence: Number(data?.results?.ml1?.frame_analysis?.confidence || 0),
+              photoId: data?.photoId,
+              aiResults: data?.results,
+              timestamp: Number(data?.timestamp || Date.now()),
+              alert: {
+                type: 'fatigue_alert_fallback',
+                severity: prediction === 'sleeping' ? 'high' : 'medium',
+                message:
+                  prediction === 'sleeping'
+                    ? 'Critical fatigue detected (fallback). Stop driving immediately.'
+                    : 'Drowsiness detected (fallback). Please take a short break.',
+                actionRequired: prediction === 'sleeping',
+              },
+            };
+            this.onFatigueAlert?.(normalized);
+          }
           this.onAIProcessingComplete?.(data);
         });
 
