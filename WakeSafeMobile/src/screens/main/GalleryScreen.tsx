@@ -29,30 +29,24 @@ interface SleepingRide {
   photos: Array<Photo & { fileUrl?: string }>;
 }
 
-interface DateFolder {
-  dateKey: string;
-  displayDate: string;
+interface SessionFolder {
+  sessionKey: string;
+  sessionLabel: string;
   photos: Array<Photo & { fileUrl?: string }>;
+  sleepingPhotoCount: number;
 }
 
 export const GalleryScreen: React.FC = () => {
   const { token } = useAuth();
-  const [folders, setFolders] = useState<DateFolder[]>([]);
+  const [folders, setFolders] = useState<SessionFolder[]>([]);
   const [totalSleepingPhotos, setTotalSleepingPhotos] = useState(0);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { showToast } = useToast();
 
-  const toDateKey = (value?: string) => {
-    const date = value ? new Date(value) : new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  const toDisplayDate = (dateKey: string) => {
-    const date = new Date(`${dateKey}T00:00:00`);
+  const formatSessionDate = (value?: string) => {
+    if (!value) return 'Unknown date';
+    const date = new Date(value);
     return date.toLocaleDateString(undefined, {
       weekday: 'short',
       year: 'numeric',
@@ -61,29 +55,23 @@ export const GalleryScreen: React.FC = () => {
     });
   };
 
-  const buildDateFolders = (sleepingRides: SleepingRide[]): DateFolder[] => {
-    const grouped = new Map<string, Array<Photo & { fileUrl?: string }>>();
-    for (const ride of sleepingRides) {
-      for (const photo of ride.photos || []) {
-        const dateKey = toDateKey(photo.createdAt);
-        if (!grouped.has(dateKey)) {
-          grouped.set(dateKey, []);
-        }
-        grouped.get(dateKey)?.push(photo);
-      }
-    }
-
-    return Array.from(grouped.entries())
-      .map(([dateKey, photos]) => ({
-        dateKey,
-        displayDate: toDisplayDate(dateKey),
-        photos: photos.sort((a, b) => {
+  const buildSessionFolders = (sleepingRides: SleepingRide[]): SessionFolder[] => {
+    return sleepingRides
+      .map((entry) => ({
+        sessionKey: entry.ride._id,
+        sessionLabel: formatSessionDate(entry.ride.startTime || entry.ride.endTime),
+        sleepingPhotoCount: entry.sleepingPhotoCount || entry.photos.length,
+        photos: (entry.photos || []).slice().sort((a, b) => {
           const aTs = new Date(a.createdAt).getTime();
           const bTs = new Date(b.createdAt).getTime();
           return bTs - aTs;
         }),
       }))
-      .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+      .sort((a, b) => {
+        const aTs = new Date(a.photos[0]?.createdAt || 0).getTime();
+        const bTs = new Date(b.photos[0]?.createdAt || 0).getTime();
+        return bTs - aTs;
+      });
   };
 
   const loadSleepingGallery = async () => {
@@ -102,7 +90,7 @@ export const GalleryScreen: React.FC = () => {
       if (response.ok) {
         const payload = await response.json();
         const nextRides = Array.isArray(payload?.rides) ? payload.rides : [];
-        setFolders(buildDateFolders(nextRides));
+        setFolders(buildSessionFolders(nextRides));
         setTotalSleepingPhotos(Number(payload?.totalSleepingPhotos || 0));
       } else {
         throw new Error('Failed to load sleeping gallery');
@@ -262,14 +250,14 @@ export const GalleryScreen: React.FC = () => {
     </View>
   );
 
-  const renderFolder = ({ item }: { item: DateFolder }) => (
+  const renderFolder = ({ item }: { item: SessionFolder }) => (
     <View style={styles.rideSection}>
       <View style={styles.rideHeader}>
         <Text style={styles.rideTitle}>
-          {item.displayDate}
+          Session - {item.sessionLabel}
         </Text>
         <Text style={styles.rideSubtitle}>
-          {item.photos.length} sleeping photo{item.photos.length === 1 ? '' : 's'}
+          {item.sleepingPhotoCount} sleeping photo{item.sleepingPhotoCount === 1 ? '' : 's'}
         </Text>
       </View>
       <FlatList
@@ -292,7 +280,7 @@ export const GalleryScreen: React.FC = () => {
         <Text style={styles.title}>Photo Gallery</Text>
         <Text style={styles.subtitle}>
           {folders.length > 0
-            ? `${totalSleepingPhotos} sleeping photos in ${folders.length} date folders`
+            ? `${totalSleepingPhotos} sleeping photos in ${folders.length} session folders`
             : 'No sleeping captures found'}
         </Text>
       </View>
@@ -303,7 +291,7 @@ export const GalleryScreen: React.FC = () => {
         <FlatList
           data={folders}
           renderItem={renderFolder}
-          keyExtractor={(item) => item.dateKey}
+          keyExtractor={(item) => item.sessionKey}
           initialNumToRender={5}
           windowSize={7}
           maxToRenderPerBatch={6}
