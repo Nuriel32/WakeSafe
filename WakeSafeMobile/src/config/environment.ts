@@ -104,13 +104,30 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
   const baseConfig = environments[env];
 
   // Optional runtime overrides for Expo Go / EAS without code edits.
-  const apiOverride = process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined;
-  const wsOverride = process.env.EXPO_PUBLIC_WS_URL as string | undefined;
+  const apiOverride =
+    (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined) ||
+    (process.env.API_BASE_URL as string | undefined);
+  const wsOverride =
+    (process.env.EXPO_PUBLIC_WS_URL as string | undefined) ||
+    (process.env.WS_URL as string | undefined);
+
+  // In Expo Go on a physical device, localhost points to the device itself.
+  // Derive host IP from Expo hostUri when local env is selected and no explicit override exists.
+  let resolvedApi = apiOverride || baseConfig.API_BASE_URL;
+  let resolvedWs = wsOverride || baseConfig.WS_URL;
+  if (env === 'local' && !apiOverride && !wsOverride) {
+    const hostUri = (Constants.expoConfig as any)?.hostUri as string | undefined;
+    const host = hostUri?.split(':')?.[0];
+    if (host) {
+      resolvedApi = `http://${host}:5000/api`;
+      resolvedWs = `http://${host}:5000`;
+    }
+  }
 
   return {
     ...baseConfig,
-    API_BASE_URL: apiOverride || baseConfig.API_BASE_URL,
-    WS_URL: wsOverride || baseConfig.WS_URL,
+    API_BASE_URL: resolvedApi,
+    WS_URL: resolvedWs,
   };
 };
 
