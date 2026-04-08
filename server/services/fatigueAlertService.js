@@ -50,7 +50,9 @@ function inferSeverity(fatigueLevel, confidenceScore, prediction) {
   return 'info';
 }
 
-function shouldTriggerAlert({ fatigueLevel, confidenceScore }) {
+function shouldTriggerAlert({ fatigueLevel, confidenceScore, prediction }) {
+  // Always escalate sleeping predictions, even if confidence/level thresholds are lower.
+  if (prediction === 'sleeping') return true;
   return fatigueLevel >= MIN_LEVEL && confidenceScore >= MIN_CONFIDENCE;
 }
 
@@ -202,6 +204,14 @@ async function processDetection(rawPayload, options = {}) {
   };
 
   const emitResult = await emitToUserRoom(payload.userId, eventPayload);
+  if (emitResult.emitted && typeof global.sendNotificationToUser === 'function') {
+    const notificationType = severity === 'critical' ? 'error' : 'warning';
+    const notificationMessage =
+      severity === 'critical'
+        ? 'WAKE UP! Severe fatigue detected. Stop driving immediately.'
+        : 'Fatigue detected. Please stay alert and take a break soon.';
+    global.sendNotificationToUser(payload.userId, notificationMessage, notificationType, 12000);
+  }
   let safeStopResult = { emitted: false, reason: 'not_attempted' };
   let safeStopPayload = null;
 

@@ -77,6 +77,14 @@ export const DashboardScreen: React.FC = () => {
         console.error('WebSocket error:', error);
         showToast(`Connection error: ${error}`, 'error');
       });
+      websocketService.setOnNotification((data) => {
+        const message = data?.message || 'Important safety alert received';
+        if (data?.type === 'warning' || data?.type === 'error') {
+          Alert.alert('WakeSafe Alert', message, [{ text: 'OK' }], { cancelable: false });
+        } else {
+          showToast(message, 'info');
+        }
+      });
 
       // Connect to WebSocket
       websocketService.connect(token).catch((error) => {
