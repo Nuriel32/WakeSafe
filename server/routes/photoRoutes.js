@@ -12,6 +12,7 @@ const {
     getUnprocessedPhotos,
     updatePhotoAIResults,
     getSessionPhotos,
+    getSleepingGalleryByRide,
     getPhotoStats
 } = require('../controllers/photoController');
 
@@ -28,6 +29,13 @@ router.get('/unprocessed', auth, checkTokenRevoked, getUnprocessedPhotos);
  * @access Private
  */
 router.get('/session/:sessionId', auth, checkTokenRevoked, getSessionPhotos);
+
+/**
+ * @route GET /api/photos/gallery/sleeping-rides
+ * @desc Get rides that contain sleeping photos
+ * @access Private
+ */
+router.get('/gallery/sleeping-rides', auth, checkTokenRevoked, getSleepingGalleryByRide);
 
 /**
  * @route PUT /api/photos/:id/ai-results

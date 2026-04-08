@@ -23,6 +23,7 @@ import { websocketService, PhotoCaptureEvent, FatigueAlert, FatigueSafeStopEvent
 import { alertAudioService } from '../../services/alertAudioService';
 import { useToast } from '../../components/feedback/ToastProvider';
 import { EmptyState } from '../../components/feedback/EmptyState';
+import { toUserMessage } from '../../utils/network';
 
 export const UploadScreen: React.FC = () => {
   const { currentSession, startSession, endSession, loading: sessionLoading, loadCurrentSession } = useSession();
@@ -122,6 +123,14 @@ export const UploadScreen: React.FC = () => {
     websocketService.setOnUploadFailed(handleWebSocketUploadFailed);
     websocketService.setOnAIProcessingComplete(handleAIProcessingComplete);
     websocketService.setOnFatigueSafeStop(handleFatigueSafeStop);
+    websocketService.setOnNotification((data) => {
+      const message = data?.message || 'Important safety alert received';
+      if (data?.type === 'warning' || data?.type === 'error') {
+        Alert.alert('WakeSafe Alert', message, [{ text: 'OK' }], { cancelable: false });
+      } else {
+        showToast(message, 'info');
+      }
+    });
     websocketService.setOnConnectionChange((connected) => {
       if (connected) {
         loadCurrentSession();
@@ -217,6 +226,16 @@ export const UploadScreen: React.FC = () => {
       if (!sessionId || !authToken) {
         console.log('UploadScreen: No session or token available for photo upload');
         console.log('UploadScreen: resolved sessionId:', sessionId, 'token present:', !!authToken);
+        setUploadStatuses(prev => {
+          const map = new Map(prev);
+          map.set(photo.sequenceNumber.toString(), {
+            photoId: photo.sequenceNumber.toString(),
+            progress: 0,
+            status: 'failed',
+            error: 'Missing session or auth token',
+          });
+          return map;
+        });
         return;
       }
 
@@ -232,7 +251,9 @@ export const UploadScreen: React.FC = () => {
       console.log(`UploadScreen: Starting photo upload for photo #${photo.sequenceNumber}`);
       await photoUploadService.uploadPhoto(photo, sessionId, authToken);
     } catch (error) {
-      console.error('UploadScreen: Photo upload failed:', error);
+      const message = toUserMessage(error, 'Photo upload failed');
+      console.error('UploadScreen: Photo upload failed:', message);
+      showToast(message, 'error');
     }
   };
 
@@ -343,11 +364,17 @@ export const UploadScreen: React.FC = () => {
         // Connect WebSocket if not already connected
         if (token) {
           console.log('UploadScreen: Connecting WebSocket...');
-          const connected = await websocketService.connect(token);
-          if (connected) {
-            console.log('UploadScreen: WebSocket connected successfully');
-          } else {
+          try {
+            const connected = await websocketService.connect(token);
+            if (connected) {
+              console.log('UploadScreen: WebSocket connected successfully');
+            } else {
+              console.log('UploadScreen: WebSocket connection failed');
+              showToast('Connected session without live updates (server unavailable).', 'info');
+            }
+          } catch (error) {
             console.log('UploadScreen: WebSocket connection failed');
+            showToast('Connected session without live updates (server unavailable).', 'info');
           }
         }
         
@@ -369,8 +396,9 @@ export const UploadScreen: React.FC = () => {
         showToast('Session started successfully', 'success');
       }
     } catch (error) {
-      console.error('UploadScreen: Failed to start session:', error);
-      showToast('Failed to start session. Please try again.', 'error');
+      const message = toUserMessage(error, 'Failed to start session. Please try again.');
+      console.error('UploadScreen: Failed to start session:', message);
+      showToast(message, 'error');
     }
   };
 
@@ -560,15 +588,25 @@ export const UploadScreen: React.FC = () => {
         if (xhr.status === 200 || xhr.status === 201) {
           resolve(xhr.response);
         } else {
-          reject(new Error(`Upload failed with status: ${xhr.status}`));
+          let message = `Upload failed with status: ${xhr.status}`;
+          try {
+            const parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+            message = parsed?.message || parsed?.error || message;
+          } catch {}
+          reject(new Error(message));
         }
       });
 
       xhr.addEventListener('error', () => {
-        reject(new Error('Upload failed'));
+        reject(new Error('No server connection. Upload failed.'));
+      });
+
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Upload timed out. Please retry.'));
       });
 
       xhr.open('POST', `${CONFIG.API_BASE_URL}/upload`);
+      xhr.timeout = 20000;
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.send(formData);
     });

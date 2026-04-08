@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useContext, createContext, Pro
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config';
 import { User, LoginResponse, RegisterResponse } from '../types';
+import { requestJson, toUserMessage } from '../utils/network';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -79,30 +80,16 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
     try {
       console.log('Making login request to:', `${CONFIG.API_BASE_URL}/auth/login`);
-      
-      // Add timeout and retry logic
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch(`${CONFIG.API_BASE_URL}/auth/login`, {
+
+      const data = await requestJson(`${CONFIG.API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
-        signal: controller.signal,
+        timeoutMs: 12000,
+        fallbackMessage: CONFIG.ERRORS.UNAUTHORIZED,
       });
-      
-      clearTimeout(timeoutId);
-      
-      console.log('Login response status:', response.status);
-      console.log('Login response ok:', response.ok);
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || CONFIG.ERRORS.UNAUTHORIZED);
-      }
 
       const token = extractTokenFromResponse(data);
       if (!token) {
@@ -153,12 +140,13 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
       return data;
     } catch (error: any) {
+      const message = toUserMessage(error, CONFIG.ERRORS.NETWORK);
       setAuthState(prev => ({
         ...prev,
         loading: false,
-        error: error.message || CONFIG.ERRORS.NETWORK,
+        error: message,
       }));
-      throw error;
+      throw new Error(message);
     }
   }, []);
 
@@ -166,19 +154,15 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/auth/register`, {
+      const data = await requestJson(`${CONFIG.API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(userData),
+        timeoutMs: 15000,
+        fallbackMessage: CONFIG.ERRORS.VALIDATION,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || CONFIG.ERRORS.VALIDATION);
-      }
 
       const token = extractTokenFromResponse(data);
       if (!token) {
@@ -202,12 +186,13 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
       return data;
     } catch (error: any) {
+      const message = toUserMessage(error, CONFIG.ERRORS.NETWORK);
       setAuthState(prev => ({
         ...prev,
         loading: false,
-        error: error.message || CONFIG.ERRORS.NETWORK,
+        error: message,
       }));
-      throw error;
+      throw new Error(message);
     }
   }, []);
 

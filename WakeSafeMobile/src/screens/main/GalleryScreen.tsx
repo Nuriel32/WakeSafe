@@ -8,7 +8,6 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useSession } from '../../hooks/useSession';
 import { useAuth } from '../../hooks/useAuth';
 import { CONFIG } from '../../config';
 import { Photo } from '../../types';
@@ -16,25 +15,71 @@ import { useToast } from '../../components/feedback/ToastProvider';
 import { EmptyState } from '../../components/feedback/EmptyState';
 import { Skeleton } from '../../components/feedback/Skeleton';
 import { colors } from '../../theme/tokens';
+import { toUserMessage } from '../../utils/network';
+
+interface SleepingRide {
+  ride: {
+    _id: string;
+    sessionId?: string;
+    startTime?: string;
+    endTime?: string;
+    status?: string;
+    isActive?: boolean;
+  };
+  sleepingPhotoCount: number;
+  photos: Array<Photo & { fileUrl?: string }>;
+}
+
+interface SessionFolder {
+  sessionKey: string;
+  sessionLabel: string;
+  photos: Array<Photo & { fileUrl?: string }>;
+  sleepingPhotoCount: number;
+}
 
 export const GalleryScreen: React.FC = () => {
-  const { currentSession } = useSession();
   const { token } = useAuth();
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [folders, setFolders] = useState<SessionFolder[]>([]);
+  const [totalSleepingPhotos, setTotalSleepingPhotos] = useState(0);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { showToast } = useToast();
 
-  const loadPhotos = async () => {
-    if (!currentSession) {
-      setPhotos([]);
-      return;
-    }
+  const formatSessionDate = (value?: string) => {
+    if (!value) return 'Unknown date';
+    const date = new Date(value);
+    return date.toLocaleDateString(undefined, {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
+  const buildSessionFolders = (sleepingRides: SleepingRide[]): SessionFolder[] => {
+    return sleepingRides
+      .map((entry) => ({
+        sessionKey: entry.ride._id,
+        sessionLabel: formatSessionDate(entry.ride.startTime || entry.ride.endTime),
+        sleepingPhotoCount: entry.sleepingPhotoCount || entry.photos.length,
+        photos: (entry.photos || []).slice().sort((a, b) => {
+          const aTs = new Date(a.createdAt).getTime();
+          const bTs = new Date(b.createdAt).getTime();
+          return bTs - aTs;
+        }),
+      }))
+      .sort((a, b) => {
+        const aTs = new Date(a.photos[0]?.createdAt || 0).getTime();
+        const bTs = new Date(b.photos[0]?.createdAt || 0).getTime();
+        return bTs - aTs;
+      });
+  };
+
+  const loadSleepingGallery = async () => {
     setLoading(true);
     try {
       const response = await fetch(
-        `${CONFIG.API_BASE_URL}/photos/session/${currentSession._id}`,
+        `${CONFIG.API_BASE_URL}/photos/gallery/sleeping-rides?maxRides=30&maxPhotosPerRide=40`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -45,13 +90,14 @@ export const GalleryScreen: React.FC = () => {
 
       if (response.ok) {
         const payload = await response.json();
-        const sessionPhotos = Array.isArray(payload) ? payload : (payload?.photos || []);
-        setPhotos(sessionPhotos);
+        const nextRides = Array.isArray(payload?.rides) ? payload.rides : [];
+        setFolders(buildSessionFolders(nextRides));
+        setTotalSleepingPhotos(Number(payload?.totalSleepingPhotos || 0));
       } else {
-        throw new Error('Failed to load photos');
+        throw new Error('Failed to load sleeping gallery');
       }
     } catch (error: any) {
-      showToast(error.message || 'Failed to load photos', 'error');
+      showToast(toUserMessage(error, 'Failed to load sleeping gallery'), 'error');
     } finally {
       setLoading(false);
     }
@@ -59,7 +105,7 @@ export const GalleryScreen: React.FC = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadPhotos();
+    await loadSleepingGallery();
     setRefreshing(false);
   };
 
@@ -91,11 +137,9 @@ export const GalleryScreen: React.FC = () => {
 
   const getPredictionColor = (prediction: string) => {
     switch (prediction) {
-      case 'alert':
+      case 'sleeping':
         return '#ef4444';
-      case 'normal':
-        return '#10b981';
-      case 'error':
+      case 'drowsy':
         return '#f59e0b';
       default:
         return '#64748b';
@@ -104,22 +148,33 @@ export const GalleryScreen: React.FC = () => {
 
   const getPredictionText = (prediction: string) => {
     switch (prediction) {
-      case 'alert':
-        return 'Fatigue Detected';
-      case 'normal':
-        return 'Normal';
-      case 'error':
-        return 'Analysis Error';
+      case 'sleeping':
+        return 'Sleeping';
+      case 'drowsy':
+        return 'Drowsy';
       default:
         return 'Pending';
     }
   };
 
-  const renderPhotoItem = useCallback(({ item }: { item: Photo }) => (
+  const getLocationText = (item: Photo) => {
+    const lat = item?.location && (item.location as any).lat != null
+      ? Number((item.location as any).lat)
+      : item?.location?.latitude;
+    const lng = item?.location && (item.location as any).lng != null
+      ? Number((item.location as any).lng)
+      : item?.location?.longitude;
+    if (typeof lat === 'number' && typeof lng === 'number') {
+      return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+    return null;
+  };
+
+  const renderPhotoItem = useCallback(({ item }: { item: Photo & { fileUrl?: string } }) => (
     <View style={styles.photoCard}>
       <View style={styles.photoContainer}>
         <Image
-          source={{ uri: item.gcsPath }}
+          source={{ uri: item.fileUrl || item.gcsPath }}
           style={styles.photo}
           onError={() => {
             // Handle image load error
@@ -161,11 +216,11 @@ export const GalleryScreen: React.FC = () => {
           </View>
         </View>
 
-        {item.location && (
+        {getLocationText(item) && (
           <View style={styles.locationContainer}>
             <Text style={styles.locationIcon}>📍</Text>
             <Text style={styles.locationText}>
-              {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
+              {getLocationText(item)}
             </Text>
           </View>
         )}
@@ -176,8 +231,8 @@ export const GalleryScreen: React.FC = () => {
   const renderEmptyState = () => (
     <EmptyState
       icon="📸"
-      title="No photos yet"
-      description={currentSession ? 'Start uploading photos to see them here.' : 'Start a session to begin.'}
+      title="No sleeping photos yet"
+      description="Photos will appear here only when prediction is sleeping."
     />
   );
 
@@ -196,39 +251,53 @@ export const GalleryScreen: React.FC = () => {
     </View>
   );
 
+  const renderFolder = ({ item }: { item: SessionFolder }) => (
+    <View style={styles.rideSection}>
+      <View style={styles.rideHeader}>
+        <Text style={styles.rideTitle}>
+          Session - {item.sessionLabel}
+        </Text>
+        <Text style={styles.rideSubtitle}>
+          {item.sleepingPhotoCount} sleeping photo{item.sleepingPhotoCount === 1 ? '' : 's'}
+        </Text>
+      </View>
+      <FlatList
+        horizontal
+        data={item.photos}
+        keyExtractor={(photo) => photo._id}
+        renderItem={renderPhotoItem}
+        showsHorizontalScrollIndicator={false}
+      />
+    </View>
+  );
+
   useEffect(() => {
-    loadPhotos();
-  }, [currentSession]);
+    loadSleepingGallery();
+  }, [token]);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Photo Gallery</Text>
         <Text style={styles.subtitle}>
-          {currentSession ? `${photos.length} photos in current session` : 'No active session'}
+          {folders.length > 0
+            ? `${totalSleepingPhotos} sleeping photos in ${folders.length} session folders`
+            : 'No sleeping captures found'}
         </Text>
       </View>
 
-      {!currentSession ? (
-        <EmptyState
-          icon="🚗"
-          title="No active session"
-          description="Start a session from Dashboard to view uploaded photos."
-        />
-      ) : (
-        loading ? (
+      {loading ? (
           renderLoadingState()
         ) : (
         <FlatList
-          data={photos}
-          renderItem={renderPhotoItem}
-          keyExtractor={(item) => item._id}
-          initialNumToRender={8}
+          data={folders}
+          renderItem={renderFolder}
+          keyExtractor={(item) => item.sessionKey}
+          initialNumToRender={5}
           windowSize={7}
-          maxToRenderPerBatch={10}
+          maxToRenderPerBatch={6}
           updateCellsBatchingPeriod={50}
           removeClippedSubviews
-          numColumns={2}
           contentContainerStyle={styles.photoList}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -237,7 +306,7 @@ export const GalleryScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
         />
         )
-      )}
+      }
     </SafeAreaView>
   );
 };
@@ -265,11 +334,28 @@ const styles = StyleSheet.create({
     padding: 10,
     paddingBottom: 20,
   },
+  rideSection: {
+    marginBottom: 14,
+  },
+  rideHeader: {
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  rideTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  rideSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
   photoCard: {
-    flex: 1,
+    width: 170,
     backgroundColor: '#fff',
     borderRadius: 12,
-    margin: 5,
+    marginRight: 10,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -283,7 +369,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   photo: {
-    width: '100%',
+    width: 170,
     height: 150,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,

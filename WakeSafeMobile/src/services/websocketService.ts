@@ -85,6 +85,16 @@ class WebSocketService {
   private onUploadFailed?: (data: any) => void;
   private onAIProcessingComplete?: (data: any) => void;
   private onFatigueSafeStop?: (data: FatigueSafeStopEvent) => void;
+  private onNotification?: (data: any) => void;
+
+  private safeInvoke<T>(handler: ((payload: T) => void) | undefined, payload: T, label: string): void {
+    if (!handler) return;
+    try {
+      handler(payload);
+    } catch (error) {
+      console.error(`WebSocket handler "${label}" failed:`, error);
+    }
+  }
 
   connect(token: string): Promise<boolean> {
     // If already connecting, return the existing promise
@@ -123,27 +133,32 @@ class WebSocketService {
           console.log('Socket ID:', this.socket?.id);
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          this.onConnectionChange?.(true);
+          this.safeInvoke(this.onConnectionChange, true, 'onConnectionChange');
           this.startHeartbeat();
           resolve(true);
         });
 
         // Connection failed
         this.socket.on('connect_error', (error) => {
+          const socketError = error as Error & {
+            description?: unknown;
+            context?: unknown;
+            type?: string;
+          };
           console.error('❌ WebSocket connection error:', error);
           console.error('Error details:', {
-            message: error.message,
-            description: error.description,
-            context: error.context,
-            type: error.type,
-            stack: error.stack
+            message: socketError.message,
+            description: socketError.description,
+            context: socketError.context,
+            type: socketError.type,
+            stack: socketError.stack
           });
           console.error('Connection URL:', CONFIG.WS_URL);
           console.error('Token available:', !!token);
           this.isConnected = false;
-          this.onConnectionChange?.(false);
+          this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
           this.stopHeartbeat();
-          this.onError?.(`Connection failed: ${error.message}`);
+          this.safeInvoke(this.onError, `Connection failed: ${socketError.message}`, 'onError');
           this.connectionPromise = null;
           reject(error);
         });
@@ -152,7 +167,7 @@ class WebSocketService {
         this.socket.on('disconnect', (reason) => {
           console.log('👋 WebSocket disconnected:', reason);
           this.isConnected = false;
-          this.onConnectionChange?.(false);
+          this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
           this.stopHeartbeat();
         });
 
@@ -161,7 +176,7 @@ class WebSocketService {
           console.log(`🔄 WebSocket reconnected after ${attemptNumber} attempts`);
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          this.onConnectionChange?.(true);
+          this.safeInvoke(this.onConnectionChange, true, 'onConnectionChange');
           this.startHeartbeat();
         });
 
@@ -175,8 +190,8 @@ class WebSocketService {
         this.socket.on('reconnect_failed', () => {
           console.error('❌ WebSocket reconnection failed');
           this.isConnected = false;
-          this.onConnectionChange?.(false);
-          this.onError?.('Failed to reconnect to server');
+          this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
+          this.safeInvoke(this.onError, 'Failed to reconnect to server', 'onError');
         });
 
         // Server welcome message
@@ -189,7 +204,7 @@ class WebSocketService {
         // Fatigue detection
         this.socket.on('fatigue_detection', (data: FatigueAlert) => {
           console.log('🚨 Received fatigue detection:', data);
-          this.onFatigueAlert?.(data);
+          this.safeInvoke(this.onFatigueAlert, data, 'onFatigueAlert');
         });
 
         // New dedicated fatigue alert event
@@ -213,25 +228,25 @@ class WebSocketService {
               actionRequired: data.severity === 'critical'
             }
           };
-          this.onFatigueAlert?.(normalized);
+          this.safeInvoke(this.onFatigueAlert, normalized, 'onFatigueAlert');
         });
 
         this.socket.on('fatigue_safe_stop', (data: FatigueSafeStopEvent) => {
           if (this.isDuplicateEvent((data as any)?.eventId)) return;
           console.log('🛑 Received fatigue_safe_stop:', data);
-          this.onFatigueSafeStop?.(data);
+          this.safeInvoke(this.onFatigueSafeStop, data, 'onFatigueSafeStop');
         });
 
         // Photo capture confirmation
         this.socket.on('photo_capture_confirmed', (data: PhotoCaptureEvent) => {
           console.log('📷 Photo capture confirmed:', data);
-          this.onPhotoCaptureConfirmed?.(data);
+          this.safeInvoke(this.onPhotoCaptureConfirmed, data, 'onPhotoCaptureConfirmed');
         });
 
         // Session updates
         this.socket.on('session_update', (data: SessionUpdate) => {
           console.log('📊 Session update received:', data);
-          this.onSessionUpdate?.(data);
+          this.safeInvoke(this.onSessionUpdate, data, 'onSessionUpdate');
         });
 
         // Session started
@@ -258,28 +273,55 @@ class WebSocketService {
         this.socket.on('ai_processing_complete', (data) => {
           if (this.isDuplicateEvent((data as any)?.eventId)) return;
           console.log('🤖 AI processing complete:', data);
-          this.onAIProcessingComplete?.(data);
+          const prediction = String(data?.results?.prediction || data?.results?.ml2?.driver_state || '').toLowerCase();
+          const fatigued = Boolean(data?.results?.ml2?.fatigued);
+          // Fallback alert should only run when backend explicitly marks that alert was emitted.
+          const alertEmitted = Boolean(data?.results?.alertEmitted);
+          if (alertEmitted && (fatigued || prediction === 'drowsy' || prediction === 'sleeping')) {
+            alertAudioService.playFatigueAlert().catch((error) => {
+              console.warn('Failed to play AI-processing fatigue alert sound:', error);
+            });
+            const normalized: FatigueAlert = {
+              sessionId: data?.results?.ml2?.session_id || data?.results?.ml1?.session_id || '',
+              fatigueLevel: prediction === 'sleeping' ? 'sleeping' : 'drowsy',
+              confidence: Number(data?.results?.ml1?.frame_analysis?.confidence || 0),
+              photoId: data?.photoId,
+              aiResults: data?.results,
+              timestamp: Number(data?.timestamp || Date.now()),
+              alert: {
+                type: 'fatigue_alert_fallback',
+                severity: prediction === 'sleeping' ? 'high' : 'medium',
+                message:
+                  prediction === 'sleeping'
+                    ? 'Critical fatigue detected (fallback). Stop driving immediately.'
+                    : 'Drowsiness detected (fallback). Please take a short break.',
+                actionRequired: prediction === 'sleeping',
+              },
+            };
+            this.safeInvoke(this.onFatigueAlert, normalized, 'onFatigueAlert');
+          }
+          this.safeInvoke(this.onAIProcessingComplete, data, 'onAIProcessingComplete');
         });
 
         // Upload notifications
         this.socket.on('upload_notification', (data) => {
           console.log('📤 Upload notification:', data);
-          this.onUploadNotification?.(data);
+          this.safeInvoke(this.onUploadNotification, data, 'onUploadNotification');
         });
 
         this.socket.on('upload_progress', (data) => {
           console.log('📊 Upload progress:', data);
-          this.onUploadProgress?.(data);
+          this.safeInvoke(this.onUploadProgress, data, 'onUploadProgress');
         });
 
         this.socket.on('upload_completed', (data) => {
           console.log('✅ Upload completed:', data);
-          this.onUploadCompleted?.(data);
+          this.safeInvoke(this.onUploadCompleted, data, 'onUploadCompleted');
         });
 
         this.socket.on('upload_failed', (data) => {
           console.log('❌ Upload failed:', data);
-          this.onUploadFailed?.(data);
+          this.safeInvoke(this.onUploadFailed, data, 'onUploadFailed');
         });
 
         // Ping/Pong
@@ -295,6 +337,12 @@ class WebSocketService {
         // Notifications
         this.socket.on('notification', (data) => {
           console.log('📢 Notification received:', data);
+          if ((data?.type === 'warning' || data?.type === 'error') && /fatigue|wake/i.test(String(data?.message || ''))) {
+            alertAudioService.playFatigueAlert().catch((error) => {
+              console.warn('Failed to play notification alert sound:', error);
+            });
+          }
+          this.safeInvoke(this.onNotification, data, 'onNotification');
         });
 
       } catch (error) {
@@ -315,7 +363,7 @@ class WebSocketService {
       this.isConnected = false;
       this.connectionPromise = null;
       this.stopHeartbeat();
-      this.onConnectionChange?.(false);
+      this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
     }
   }
 
@@ -462,6 +510,10 @@ class WebSocketService {
 
   setOnFatigueSafeStop(handler: (data: FatigueSafeStopEvent) => void): void {
     this.onFatigueSafeStop = handler;
+  }
+
+  setOnNotification(handler: (data: any) => void): void {
+    this.onNotification = handler;
   }
 
   // ---- Getters ----

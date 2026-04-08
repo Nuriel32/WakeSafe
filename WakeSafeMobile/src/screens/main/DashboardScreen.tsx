@@ -18,6 +18,7 @@ import { websocketService, FatigueAlert } from '../../services/websocketService'
 import { alertAudioService } from '../../services/alertAudioService';
 import { EmptyState } from '../../components/feedback/EmptyState';
 import { useToast } from '../../components/feedback/ToastProvider';
+import { toUserMessage } from '../../utils/network';
 
 export const DashboardScreen: React.FC = () => {
   const { user, logout, token } = useAuth();
@@ -77,11 +78,19 @@ export const DashboardScreen: React.FC = () => {
         console.error('WebSocket error:', error);
         showToast(`Connection error: ${error}`, 'error');
       });
+      websocketService.setOnNotification((data) => {
+        const message = data?.message || 'Important safety alert received';
+        if (data?.type === 'warning' || data?.type === 'error') {
+          Alert.alert('WakeSafe Alert', message, [{ text: 'OK' }], { cancelable: false });
+        } else {
+          showToast(message, 'info');
+        }
+      });
 
       // Connect to WebSocket
       websocketService.connect(token).catch((error) => {
         console.error('Failed to connect to WebSocket:', error);
-        showToast('Unable to connect to real-time updates', 'error');
+        showToast('Live updates unavailable. Running in degraded mode.', 'info');
       });
 
       return () => {
@@ -126,7 +135,7 @@ export const DashboardScreen: React.FC = () => {
       // Navigate to UploadScreen to start camera capture
       showToast('Go to Upload tab to start camera capture', 'info');
     } catch (error: any) {
-      showToast(error.message || 'Failed to start session', 'error');
+      showToast(toUserMessage(error, 'Failed to start session'), 'error');
     }
   };
 
@@ -153,7 +162,7 @@ export const DashboardScreen: React.FC = () => {
               await endSession(currentSession._id);
               showToast(CONFIG.SUCCESS.SESSION_END, 'success');
             } catch (error: any) {
-              showToast(error.message || 'Failed to end session', 'error');
+              showToast(toUserMessage(error, 'Failed to end session'), 'error');
             }
           },
         },

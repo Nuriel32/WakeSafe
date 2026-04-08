@@ -71,11 +71,22 @@ app.use(express.json({ limit: '1mb' }));
 // express-mongo-sanitize mutates req.query, which is read-only in Express 5.
 // Sanitize mutable payload containers only.
 app.use((req, _res, next) => {
+  const sanitize =
+    typeof mongoSanitize?.sanitize === 'function'
+      ? mongoSanitize.sanitize.bind(mongoSanitize)
+      : typeof mongoSanitize === 'function'
+        ? mongoSanitize
+        : null;
+
+  if (!sanitize) return next();
+
   if (req.body && typeof req.body === 'object') {
-    req.body = mongoSanitize.sanitize(req.body, { replaceWith: '_' });
+    const sanitized = sanitize(req.body, { replaceWith: '_' });
+    if (sanitized && typeof sanitized === 'object') req.body = sanitized;
   }
   if (req.params && typeof req.params === 'object') {
-    req.params = mongoSanitize.sanitize(req.params, { replaceWith: '_' });
+    const sanitized = sanitize(req.params, { replaceWith: '_' });
+    if (sanitized && typeof sanitized === 'object') req.params = sanitized;
   }
   next();
 });
@@ -119,7 +130,6 @@ app.use('/api/upload', presignedUploadLimiter, require('./routes/presignedUpload
 // Apply API rate limiting to other routes
 app.use('/api/users', apiLimiter, require('./routes/userRoutes'));
 app.use('/api/sessions', apiLimiter, require('./routes/sessionRoutes'));
-app.use('/api/trips', apiLimiter, require('./routes/tripRoute')); // trip as driver session
 app.use('/api/fatigue', apiLimiter, require('./routes/fatigueRoutes'));
 app.use('/api/location', apiLimiter, require('./routes/locationRoutes'));
 app.use('/api/photos', apiLimiter, require('./routes/photoRoutes'));
