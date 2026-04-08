@@ -11,6 +11,13 @@ interface AuthState {
   error: string | null;
 }
 
+const extractTokenFromResponse = (data: any): string | null => {
+  if (!data || typeof data !== 'object') return null;
+  if (typeof data.token === 'string' && data.token.length > 0) return data.token;
+  if (data.data && typeof data.data.token === 'string' && data.data.token.length > 0) return data.data.token;
+  return null;
+};
+
 type AuthContextType = AuthState & {
   login: (email: string, password: string) => Promise<any>;
   register: (userData: any) => Promise<any>;
@@ -97,14 +104,19 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
         throw new Error(data.message || CONFIG.ERRORS.UNAUTHORIZED);
       }
 
+      const token = extractTokenFromResponse(data);
+      if (!token) {
+        throw new Error('Authentication token missing in server response');
+      }
+
       // Decode JWT to get user info
       console.log('About to decode JWT...');
-      const user = decodeJWT(data.token);
+      const user = decodeJWT(token);
       console.log('JWT decoded successfully, user:', user);
 
       // Store auth data
       console.log('Storing auth data in AsyncStorage...');
-      await AsyncStorage.setItem(CONFIG.TOKEN_KEY, data.token);
+      await AsyncStorage.setItem(CONFIG.TOKEN_KEY, token);
       await AsyncStorage.setItem(CONFIG.USER_KEY, JSON.stringify(user));
       console.log('Auth data stored successfully');
 
@@ -112,7 +124,7 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
       const newAuthState = {
         isAuthenticated: true,
         user,
-        token: data.token,
+        token,
         loading: false,
         error: null,
       };
@@ -168,17 +180,22 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
         throw new Error(data.message || CONFIG.ERRORS.VALIDATION);
       }
 
+      const token = extractTokenFromResponse(data);
+      if (!token) {
+        throw new Error('Authentication token missing in server response');
+      }
+
       // Decode JWT to get user info
-      const user = decodeJWT(data.token);
+      const user = decodeJWT(token);
 
       // Store auth data
-      await AsyncStorage.setItem(CONFIG.TOKEN_KEY, data.token);
+      await AsyncStorage.setItem(CONFIG.TOKEN_KEY, token);
       await AsyncStorage.setItem(CONFIG.USER_KEY, JSON.stringify(user));
 
       setAuthState({
         isAuthenticated: true,
         user,
-        token: data.token,
+        token,
         loading: false,
         error: null,
       });

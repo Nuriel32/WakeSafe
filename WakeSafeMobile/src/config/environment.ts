@@ -2,7 +2,7 @@
 // This file helps manage different environments (local, staging, production)
 import Constants from 'expo-constants';
 
-export type Environment = 'development' | 'local' | 'staging' | 'production';
+export type Environment = 'local' | 'gcpdev' | 'staging' | 'production';
 
 export interface EnvironmentConfig {
   API_BASE_URL: string;
@@ -24,7 +24,7 @@ export interface EnvironmentConfig {
 
 // Environment configurations
 const environments: Record<Environment, EnvironmentConfig> = {
-  development: {
+  gcpdev: {
     API_BASE_URL: 'https://wakesafe-api-227831302277.us-central1.run.app/api',
     WS_URL: 'https://wakesafe-api-227831302277.us-central1.run.app',
     DEBUG: true,
@@ -39,8 +39,8 @@ const environments: Record<Environment, EnvironmentConfig> = {
     SESSION_UPDATE_INTERVAL: 1000,
   },
   local: {
-    API_BASE_URL: 'http://192.168.1.133:5000/api',
-    WS_URL: 'http://192.168.1.133:5000',
+    API_BASE_URL: 'http://localhost:5000/api',
+    WS_URL: 'http://localhost:5000',
     DEBUG: true,
     LOG_LEVEL: 'debug',
     NODE_ENV: 'development',
@@ -84,16 +84,18 @@ const environments: Record<Environment, EnvironmentConfig> = {
 
 // Get current environment
 export const getCurrentEnvironment = (): Environment => {
-  // Read ENV from Expo extra or public env. Fallback to 'development'.
+  // Read ENV from EXPO_PUBLIC first, then Expo extra. Fallback to 'local'.
   try {
-    const envFromExtra = (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.ENV)
-      || (process.env.EXPO_PUBLIC_ENV as string | undefined);
-    const env = (envFromExtra || 'development') as Environment;
-    if (['development', 'local', 'staging', 'production'].includes(env)) {
+    const envFromPublic = process.env.EXPO_PUBLIC_ENV as string | undefined;
+    const envFromExtra = (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.ENV) as string | undefined;
+    const selected = envFromPublic || envFromExtra;
+    const normalized = selected === 'development' ? 'gcpdev' : selected;
+    const env = (normalized || 'local') as Environment;
+    if (['local', 'gcpdev', 'staging', 'production'].includes(env)) {
       return env as Environment;
     }
   } catch {}
-  return 'development';
+  return 'local';
 };
 
 // Get environment configuration
@@ -102,13 +104,30 @@ export const getEnvironmentConfig = (): EnvironmentConfig => {
   const baseConfig = environments[env];
 
   // Optional runtime overrides for Expo Go / EAS without code edits.
-  const apiOverride = process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined;
-  const wsOverride = process.env.EXPO_PUBLIC_WS_URL as string | undefined;
+  const apiOverride =
+    (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined) ||
+    (process.env.API_BASE_URL as string | undefined);
+  const wsOverride =
+    (process.env.EXPO_PUBLIC_WS_URL as string | undefined) ||
+    (process.env.WS_URL as string | undefined);
+
+  // In Expo Go on a physical device, localhost points to the device itself.
+  // Derive host IP from Expo hostUri when local env is selected and no explicit override exists.
+  let resolvedApi = apiOverride || baseConfig.API_BASE_URL;
+  let resolvedWs = wsOverride || baseConfig.WS_URL;
+  if (env === 'local' && !apiOverride && !wsOverride) {
+    const hostUri = (Constants.expoConfig as any)?.hostUri as string | undefined;
+    const host = hostUri?.split(':')?.[0];
+    if (host) {
+      resolvedApi = `http://${host}:5000/api`;
+      resolvedWs = `http://${host}:5000`;
+    }
+  }
 
   return {
     ...baseConfig,
-    API_BASE_URL: apiOverride || baseConfig.API_BASE_URL,
-    WS_URL: wsOverride || baseConfig.WS_URL,
+    API_BASE_URL: resolvedApi,
+    WS_URL: resolvedWs,
   };
 };
 

@@ -5,12 +5,18 @@
     "setup": "npm install --prefix server && npm install --prefix WakeSafeMobile",
     "dev:server": "npm run dev --prefix server",
     "dev:mobile": "npm run start --prefix WakeSafeMobile",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:mobile\"",
+    "dev": "npm run dev:server",
+    "dev:local:prepare": "npm run env:local --prefix WakeSafeMobile",
+    "dev:local": "npm run redis:up && npm run dev:local:prepare && concurrently -k -n backend,ml1,ml2 -c green,blue,magenta \"powershell -NoProfile -Command \\\"$env:ENV_PROFILE='local'; npm run dev --prefix server\\\"\" \"powershell -NoProfile -Command \\\"Set-Location 'ml1-service'; ..\\\\.venv-ml\\\\Scripts\\\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload\\\"\" \"powershell -NoProfile -Command \\\"Set-Location 'ml2-service'; ..\\\\.venv-ml\\\\Scripts\\\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload\\\"\"",
+    "dev:local:all": "npm run redis:up && npm run dev:local:prepare && concurrently -k -n backend,ml1,ml2,mobile -c green,blue,magenta,cyan \"powershell -NoProfile -Command \\\"$env:ENV_PROFILE='local'; npm run dev --prefix server\\\"\" \"powershell -NoProfile -Command \\\"Set-Location 'ml1-service'; ..\\\\.venv-ml\\\\Scripts\\\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload\\\"\" \"powershell -NoProfile -Command \\\"Set-Location 'ml2-service'; ..\\\\.venv-ml\\\\Scripts\\\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload\\\"\" \"npm run start --prefix WakeSafeMobile\"",
     "test:server": "npm test --prefix server",
     "lint:server-tests": "npm run test --prefix server",
     "gcp:start": "powershell -ExecutionPolicy Bypass -File ./scripts/manage-gcp-services.ps1 start",
     "gcp:stop": "powershell -ExecutionPolicy Bypass -File ./scripts/manage-gcp-services.ps1 stop",
-    "gcp:status": "powershell -ExecutionPolicy Bypass -File ./scripts/manage-gcp-services.ps1 status"
+    "gcp:status": "powershell -ExecutionPolicy Bypass -File ./scripts/manage-gcp-services.ps1 status",
+    "redis:up": "docker compose -f docker-compose.local.yml up -d redis",
+    "redis:down": "docker compose -f docker-compose.local.yml down",
+    "redis:logs": "docker compose -f docker-compose.local.yml logs -f redis"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
