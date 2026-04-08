@@ -5,6 +5,7 @@ const FatigueLog = require('../models/FatigueLog');
 const fatigueAlertService = require('./fatigueAlertService');
 const monitoring = require('./monitoringService');
 const mlAdapter = require('../adapters/mlAdapter');
+const cache = require('./cacheService');
 
 // AI Processing Service for WakeSafe
 // This service handles communication with the AI server for fatigue detection
@@ -214,6 +215,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
         },
       }
     );
+    await cache.invalidatePhotoCachesForUser(photoDoc.userId, photoDoc.sessionId);
 
     await FatigueLog.create({
       userId: photoDoc.userId,
@@ -347,6 +349,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
         $inc: { uploadRetries: 1 },
       }
     );
+    await cache.invalidatePhotoCachesForUser(photoDoc.userId, photoDoc.sessionId);
     if (global.broadcastAIProcessingComplete) {
       global.broadcastAIProcessingComplete(
         photoDoc.userId?.toString(),

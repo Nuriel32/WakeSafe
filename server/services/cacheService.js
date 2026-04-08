@@ -84,6 +84,42 @@ async function del(key) {
   }
 }
 
+/**
+ * Delete all keys matching a Redis glob pattern (e.g. sleeping_gallery:userId:*).
+ */
+async function deleteKeysByPattern(pattern) {
+  const client = getRedisClient();
+  if (!client) {
+    return 0;
+  }
+  let deleted = 0;
+  try {
+    for await (const key of client.scanIterator({ MATCH: pattern, COUNT: 200 })) {
+      await client.del(key);
+      deleted += 1;
+    }
+    if (deleted > 0) {
+      logger.debug(`Cache deleteKeysByPattern: ${pattern} (${deleted} keys)`);
+    }
+  } catch (error) {
+    logger.error('Cache deleteKeysByPattern failed:', error);
+  }
+  return deleted;
+}
+
+/**
+ * Bust photo list caches when a photo's prediction or membership in the sleeping gallery may change.
+ */
+async function invalidatePhotoCachesForUser(userId, sessionId) {
+  if (!userId) return;
+  const uid = String(userId);
+  await deleteKeysByPattern(`sleeping_gallery:${uid}:*`);
+  if (sessionId) {
+    const sid = String(sessionId);
+    await deleteKeysByPattern(`session_photos:${sid}:*`);
+  }
+}
+
 async function exists(key) {
   try {
     const client = getRedisClient();
@@ -244,6 +280,8 @@ module.exports = {
   set,
   get,
   del,
+  deleteKeysByPattern,
+  invalidatePhotoCachesForUser,
   exists,
   expire,
   ttl,
