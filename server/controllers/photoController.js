@@ -1,6 +1,11 @@
 const Photo = require('../models/PhotoSchema');
 const DriverSession = require('../models/DriverSession');
-const { deleteFile, getUnprocessedPhotos: getGCSUnprocessedPhotos, updatePhotoProcessingStatus } = require('../services/gcpStorageService');
+const {
+    deleteFile,
+    generateSignedUrl,
+    getUnprocessedPhotos: getGCSUnprocessedPhotos,
+    updatePhotoProcessingStatus
+} = require('../services/gcpStorageService');
 const logger = require('../utils/logger');
 const cache = require('../services/cacheService');
 
@@ -60,6 +65,24 @@ async function deleteMultiplePhotos(photoIds = []) {
 
     logger.info(`From PhotoController: Bulk deletion summary: ${deleted} succeeded, ${errors} failed`);
     return { deleted, errors };
+}
+
+async function enrichPhotosWithFileUrl(photos = []) {
+    return Promise.all(
+        photos.map(async (photo) => {
+            let fileUrl = photo.gcsPath;
+            try {
+                fileUrl = await generateSignedUrl(photo.gcsPath, 60);
+            } catch (error) {
+                logger.warn(`From photoController: Failed to generate signed URL for photo ${photo._id}: ${error.message}`);
+            }
+
+            return {
+                ...photo,
+                fileUrl
+            };
+        })
+    );
 }
 
 /**
@@ -193,15 +216,17 @@ exports.getSessionPhotos = async (req, res) => {
         const photos = await Photo.find(query)
             .sort({ uploadedAt: -1 })
             .limit(limit)
-            .select('userId gcsPath fileName name uploadedAt prediction aiProcessingStatus aiResults location')
+            .select('sessionId userId gcsPath fileName name uploadedAt createdAt prediction aiProcessingStatus aiResults location')
             .populate('userId', 'firstName lastName')
             .lean();
 
-        logger.info(`From photoController: Retrieved ${photos.length} photos for session ${sessionId}`);
+        const enrichedPhotos = await enrichPhotosWithFileUrl(photos);
+
+        logger.info(`From photoController: Retrieved ${enrichedPhotos.length} photos for session ${sessionId}`);
 
         const payload = {
-            photos,
-            count: photos.length,
+            photos: enrichedPhotos,
+            count: enrichedPhotos.length,
             sessionId
         };
         await cache.set(cacheKey, payload, 15);
@@ -209,6 +234,81 @@ exports.getSessionPhotos = async (req, res) => {
     } catch (error) {
         logger.error(`From photoController: Failed to get session photos: ${error.message}`);
         res.status(500).json({ error: 'Failed to retrieve session photos' });
+    }
+};
+
+/**
+ * Get gallery rides that contain sleeping photos only
+ * @route GET /api/photos/gallery/sleeping-rides
+ */
+exports.getSleepingGalleryByRide = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const maxRides = Math.min(parseInt(req.query.maxRides || '20', 10), 100);
+        const maxPhotosPerRide = Math.min(parseInt(req.query.maxPhotosPerRide || '20', 10), 100);
+        const cacheKey = `sleeping_gallery:${userId}:${maxRides}:${maxPhotosPerRide}`;
+
+        const cached = await cache.get(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
+
+        const sleepingPhotos = await Photo.find({
+            userId,
+            prediction: 'sleeping',
+            aiProcessingStatus: 'completed'
+        })
+            .sort({ uploadedAt: -1 })
+            .select('sessionId userId gcsPath fileName name uploadedAt createdAt prediction aiProcessingStatus aiResults location')
+            .lean();
+
+        const bySession = new Map();
+        for (const photo of sleepingPhotos) {
+            const key = String(photo.sessionId);
+            if (!bySession.has(key)) {
+                bySession.set(key, []);
+            }
+            bySession.get(key).push(photo);
+        }
+
+        const sessionIds = Array.from(bySession.keys()).slice(0, maxRides);
+        if (sessionIds.length === 0) {
+            const emptyPayload = {
+                rides: [],
+                count: 0,
+                totalSleepingPhotos: 0
+            };
+            await cache.set(cacheKey, emptyPayload, 15);
+            return res.json(emptyPayload);
+        }
+
+        const sessions = await DriverSession.find({ _id: { $in: sessionIds } })
+            .select('_id sessionId startTime endTime status isActive createdAt updatedAt')
+            .lean();
+        const sessionMap = new Map(sessions.map((session) => [String(session._id), session]));
+
+        const rides = [];
+        for (const sessionId of sessionIds) {
+            const photos = bySession.get(sessionId) || [];
+            const limitedPhotos = photos.slice(0, maxPhotosPerRide);
+            const enrichedPhotos = await enrichPhotosWithFileUrl(limitedPhotos);
+            rides.push({
+                ride: sessionMap.get(sessionId) || { _id: sessionId },
+                sleepingPhotoCount: photos.length,
+                photos: enrichedPhotos
+            });
+        }
+
+        const payload = {
+            rides,
+            count: rides.length,
+            totalSleepingPhotos: rides.reduce((acc, ride) => acc + ride.sleepingPhotoCount, 0)
+        };
+        await cache.set(cacheKey, payload, 15);
+        res.json(payload);
+    } catch (error) {
+        logger.error(`From photoController: Failed to build sleeping gallery: ${error.message}`);
+        res.status(500).json({ error: 'Failed to retrieve sleeping gallery' });
     }
 };
 
@@ -312,5 +412,6 @@ module.exports = {
     getUnprocessedPhotos: exports.getUnprocessedPhotos,
     updatePhotoAIResults: exports.updatePhotoAIResults,
     getSessionPhotos: exports.getSessionPhotos,
+    getSleepingGalleryByRide: exports.getSleepingGalleryByRide,
     getPhotoStats: exports.getPhotoStats
 };
