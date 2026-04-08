@@ -3,6 +3,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
+const path = require('path');
 const requestLogger = require('./middlewares/requestLogger');
 const responseFormat = require('./middlewares/responseFormat');
 const logger = require('./utils/logger');
@@ -67,9 +68,22 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '1mb' }));
-app.use(mongoSanitize({ replaceWith: '_' }));
+// express-mongo-sanitize mutates req.query, which is read-only in Express 5.
+// Sanitize mutable payload containers only.
+app.use((req, _res, next) => {
+  if (req.body && typeof req.body === 'object') {
+    req.body = mongoSanitize.sanitize(req.body, { replaceWith: '_' });
+  }
+  if (req.params && typeof req.params === 'object') {
+    req.params = mongoSanitize.sanitize(req.params, { replaceWith: '_' });
+  }
+  next();
+});
 app.use(requestLogger);
 app.use(responseFormat);
+
+// Serve local uploaded files when running with local storage provider.
+app.use('/local-uploads', express.static(process.env.LOCAL_UPLOAD_DIR || path.join(__dirname, 'uploads')));
 
 // Rate Limiters
 const { generalLimiter, authLimiter, uploadLimiter, presignedUploadLimiter, apiLimiter } = require('./middlewares/rateLimit');

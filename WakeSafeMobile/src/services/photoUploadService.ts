@@ -57,29 +57,80 @@ class PhotoUploadService {
       const random = Math.random().toString(36).substring(2, 8);
       const fileName = `photo_${sequenceNumber.toString().padStart(6, '0')}_${timestamp}_${random}.jpg`;
 
-      // Request presigned URL
-      const presignedData = await this.getPresignedUrl(
-        fileName,
-        sessionId,
-        sequenceNumber,
-        timestamp,
-        location,
-        token
-      );
+      if (this.isLocalApi()) {
+        await this.uploadDirectToBackend(photo, sessionId, token, location);
+      } else {
+        // Request presigned URL
+        const presignedData = await this.getPresignedUrl(
+          fileName,
+          sessionId,
+          sequenceNumber,
+          timestamp,
+          location,
+          token
+        );
 
-      console.log(`Presigned URL received for photo #${photo.sequenceNumber}`);
+        console.log(`Presigned URL received for photo #${photo.sequenceNumber}`);
 
-      // Upload photo to GCS using presigned URL
-      await this.uploadToGCS(photo.uri, presignedData, photo.sequenceNumber);
+        // Upload photo to GCS using presigned URL
+        await this.uploadToGCS(photo.uri, presignedData, photo.sequenceNumber);
 
-      // Confirm upload to server
-      await this.confirmUpload(presignedData.photoId, true, token);
+        // Confirm upload to server
+        await this.confirmUpload(presignedData.photoId, true, token);
+      }
 
       console.log(`Photo #${photo.sequenceNumber} uploaded successfully`);
 
     } catch (error) {
       console.error(`Upload failed for photo #${photo.sequenceNumber}:`, error);
       this.onUploadFailed?.(photo.sequenceNumber.toString(), error instanceof Error ? error.message : 'Upload failed');
+    }
+  }
+
+  private isLocalApi(): boolean {
+    const url = CONFIG.API_BASE_URL || '';
+    return /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(url);
+  }
+
+  private async uploadDirectToBackend(
+    photo: PhotoCaptureResult,
+    sessionId: string,
+    token: string,
+    location?: { latitude: number; longitude: number }
+  ): Promise<void> {
+    const formData = new FormData();
+    formData.append('sessionId', sessionId);
+    formData.append('sequenceNumber', String(photo.sequenceNumber));
+    formData.append('timestamp', String(photo.timestamp));
+    if (location) {
+      formData.append('location', JSON.stringify(location));
+    }
+    formData.append(
+      'clientMeta',
+      JSON.stringify({
+        deviceType: 'mobile',
+        appVersion: '1.0.0',
+        platform: 'react-native',
+      })
+    );
+    formData.append('folderType', 'before-ai');
+    formData.append('photo', {
+      uri: photo.uri,
+      name: `photo_${photo.sequenceNumber}.jpg`,
+      type: 'image/jpeg',
+    } as any);
+
+    const response = await fetch(`${CONFIG.API_BASE_URL}/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Local upload failed');
     }
   }
 

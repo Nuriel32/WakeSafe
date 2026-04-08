@@ -1,9 +1,38 @@
 const { Storage } = require('@google-cloud/storage');
 const logger = require('../utils/logger');
+const fs = require('fs');
+const path = require('path');
 
 // Lazy initialization to avoid errors when GCS_BUCKET is not set
 let storage = null;
 let bucket = null;
+const LOCAL_UPLOAD_ROOT = process.env.LOCAL_UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+
+function isLocalStorage() {
+  return (process.env.STORAGE_PROVIDER || '').toLowerCase() === 'local'
+    || (process.env.ENV_PROFILE || '').toLowerCase() === 'local';
+}
+
+function getLocalBaseUrl() {
+  return process.env.LOCAL_UPLOAD_BASE_URL || `http://127.0.0.1:${process.env.PORT || 5000}`;
+}
+
+function ensureLocalDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function normalizeStoragePath(storagePath = '') {
+  if (storagePath.startsWith('local://')) {
+    return storagePath.replace('local://', '');
+  }
+  if (storagePath.startsWith('gs://')) {
+    const bucketName = process.env.GCS_BUCKET;
+    if (bucketName && storagePath.startsWith(`gs://${bucketName}/`)) {
+      return storagePath.replace(`gs://${bucketName}/`, '');
+    }
+  }
+  return storagePath;
+}
 
 function getBucketName() {
   const name = (process.env.GCS_BUCKET || '').trim();
@@ -37,6 +66,14 @@ function checkGCSAvailability() {
 
 async function uploadFile(filePath, destinationPath, metadata = {}) {
   try {
+    if (isLocalStorage()) {
+      const relativePath = destinationPath.replace(/^[/\\]+/, '');
+      const absoluteDest = path.join(LOCAL_UPLOAD_ROOT, relativePath);
+      ensureLocalDir(path.dirname(absoluteDest));
+      fs.copyFileSync(filePath, absoluteDest);
+      logger.info(`File uploaded to local storage: ${absoluteDest}`);
+      return `local://${relativePath}`;
+    }
     checkGCSAvailability();
     
     const file = bucket.file(destinationPath);
@@ -58,8 +95,6 @@ async function uploadFile(filePath, destinationPath, metadata = {}) {
 // Enhanced upload function for continuous photo capture
 async function uploadSessionPhoto(file, userId, sessionId, metadata = {}, folderType = 'before-ai') {
   try {
-    checkGCSAvailability();
-    
     // Generate unique filename with timestamp and sequence number
     const timestamp = Date.now();
     const sequenceNumber = metadata.sequenceNumber || 0;
@@ -68,9 +103,30 @@ async function uploadSessionPhoto(file, userId, sessionId, metadata = {}, folder
     const smartName = `photo_${sequenceNumber.toString().padStart(6, '0')}_${timestamp}_${random}.${extension}`;
     
     // Create organized folder structure: drivers/{userId}/sessions/{sessionId}/photos/{folderType}/
-    const gcsPath = `drivers/${userId}/sessions/${sessionId}/photos/${folderType}/${smartName}`;
-    
-    const fileObj = bucket.file(gcsPath);
+    const storagePath = `drivers/${userId}/sessions/${sessionId}/photos/${folderType}/${smartName}`;
+
+    if (isLocalStorage()) {
+      const absoluteDest = path.join(LOCAL_UPLOAD_ROOT, storagePath);
+      ensureLocalDir(path.dirname(absoluteDest));
+      fs.writeFileSync(absoluteDest, file.buffer);
+
+      logger.info(`Session photo uploaded to local storage: ${absoluteDest} (sequence: ${sequenceNumber})`);
+
+      return {
+        gcsPath: `local://${storagePath}`,
+        smartName,
+        metadata: {
+          ...metadata,
+          gcsPath: `local://${storagePath}`,
+          uploadedAt: new Date().toISOString(),
+          fileSize: file.size,
+          contentType: file.mimetype
+        }
+      };
+    }
+
+    checkGCSAvailability();
+    const fileObj = bucket.file(storagePath);
     
     // Upload file buffer
     await fileObj.upload(file.buffer, {
@@ -91,14 +147,14 @@ async function uploadSessionPhoto(file, userId, sessionId, metadata = {}, folder
       },
     });
     
-    logger.info(`Session photo uploaded to GCS: ${gcsPath} (sequence: ${sequenceNumber})`);
+    logger.info(`Session photo uploaded to GCS: ${storagePath} (sequence: ${sequenceNumber})`);
     
     return {
-      gcsPath: `gs://${process.env.GCS_BUCKET}/${gcsPath}`,
+      gcsPath: `gs://${process.env.GCS_BUCKET}/${storagePath}`,
       smartName,
       metadata: {
         ...metadata,
-        gcsPath: `gs://${process.env.GCS_BUCKET}/${gcsPath}`,
+        gcsPath: `gs://${process.env.GCS_BUCKET}/${storagePath}`,
         uploadedAt: new Date().toISOString(),
         fileSize: file.size,
         contentType: file.mimetype
@@ -112,6 +168,15 @@ async function uploadSessionPhoto(file, userId, sessionId, metadata = {}, folder
 
 async function deleteFile(gcsPath) {
   try {
+    if (isLocalStorage()) {
+      const relativePath = normalizeStoragePath(gcsPath);
+      const absolutePath = path.join(LOCAL_UPLOAD_ROOT, relativePath);
+      if (fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
+      }
+      logger.info(`File deleted from local storage: ${absolutePath}`);
+      return true;
+    }
     checkGCSAvailability();
     
     const fileName = gcsPath.replace(`gs://${process.env.GCS_BUCKET}/`, '');
@@ -128,6 +193,9 @@ async function deleteFile(gcsPath) {
 
 async function generatePresignedUploadUrl(fileName, contentType, expiresInMinutes = 60) {
   try {
+    if (isLocalStorage()) {
+      throw new Error('Presigned upload URLs are disabled in local storage mode. Use /api/upload multipart endpoint.');
+    }
     checkGCSAvailability();
     
     const file = bucket.file(fileName);
@@ -147,6 +215,11 @@ async function generatePresignedUploadUrl(fileName, contentType, expiresInMinute
 
 async function generateSignedUrl(gcsPath, expiresInMinutes = 60) {
   try {
+    if (isLocalStorage()) {
+      const relativePath = normalizeStoragePath(gcsPath);
+      const encoded = relativePath.split('/').map(encodeURIComponent).join('/');
+      return `${getLocalBaseUrl()}/local-uploads/${encoded}`;
+    }
     checkGCSAvailability();
     
     const fileName = gcsPath.replace(`gs://${process.env.GCS_BUCKET}/`, '');
@@ -166,6 +239,12 @@ async function generateSignedUrl(gcsPath, expiresInMinutes = 60) {
 
 async function getSessionPhotos(sessionId) {
   try {
+    if (isLocalStorage()) {
+      const root = path.join(LOCAL_UPLOAD_ROOT, 'drivers');
+      if (!fs.existsSync(root)) return [];
+      // Keep behavior simple in local mode; DB remains source of truth.
+      return [];
+    }
     checkGCSAvailability();
     
     const [files] = await bucket.getFiles({
@@ -186,6 +265,9 @@ async function getSessionPhotos(sessionId) {
 
 async function getUnprocessedPhotos() {
   try {
+    if (isLocalStorage()) {
+      return [];
+    }
     checkGCSAvailability();
     
     const [files] = await bucket.getFiles({
@@ -207,6 +289,10 @@ async function getUnprocessedPhotos() {
 
 async function updatePhotoProcessingStatus(gcsPath, status, results = {}) {
   try {
+    if (isLocalStorage()) {
+      logger.info(`Local storage status update skipped for ${gcsPath} -> ${status}`);
+      return true;
+    }
     checkGCSAvailability();
     
     const fileName = gcsPath.replace(`gs://${process.env.GCS_BUCKET}/`, '');

@@ -8,12 +8,19 @@ exports.createSession = async (req, res, next) => {
     const userId = req.user.id;
     console.log('Creating session for user:', userId);
 
+    // Enforce single active session per user by reusing existing one.
+    const existingActiveSession = await DriverSession.findOne({ userId, isActive: true });
+    if (existingActiveSession) {
+      await cache.set(`active_session:${userId}`, existingActiveSession._id.toString(), 7200);
+      return res.success(existingActiveSession, { message: 'Active session already exists' });
+    }
+
     // Generate a unique session ID
     const sessionId = `session_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     console.log('Generated sessionId:', sessionId);
     
-    const session = await DriverSession.create({ 
+    const session = await DriverSession.create({
       userId,
       sessionId: sessionId,
       status: 'active',
@@ -38,6 +45,20 @@ exports.createSession = async (req, res, next) => {
     return res.success(session, { statusCode: 201, message: 'Session created successfully' });
   } catch (error) {
     console.error('Create session error:', error);
+    // Handle race-condition duplicate key from unique active-session index.
+    if (error && error.code === 11000) {
+      try {
+        const userId = req.user.id;
+        const existingActiveSession = await DriverSession.findOne({ userId, isActive: true });
+        if (existingActiveSession) {
+          await cache.set(`active_session:${userId}`, existingActiveSession._id.toString(), 7200);
+          return res.success(existingActiveSession, { message: 'Active session already exists' });
+        }
+      } catch (lookupError) {
+        logger.error('From driverSessionController: Failed duplicate-session fallback lookup:', lookupError);
+      }
+      return next(new HttpError(409, 'Active session already exists', null, 'SESSION_ALREADY_ACTIVE'));
+    }
     logger.error('From driverSessionController: Failed to create driver session:', error);
     return next(new HttpError(500, 'Could not create session', null, 'SESSION_CREATE_FAILED'));
   }
