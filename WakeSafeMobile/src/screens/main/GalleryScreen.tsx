@@ -15,6 +15,7 @@ import { useToast } from '../../components/feedback/ToastProvider';
 import { EmptyState } from '../../components/feedback/EmptyState';
 import { Skeleton } from '../../components/feedback/Skeleton';
 import { colors } from '../../theme/tokens';
+import { toUserMessage } from '../../utils/network';
 
 interface SleepingRide {
   ride: {
@@ -96,7 +97,7 @@ export const GalleryScreen: React.FC = () => {
         throw new Error('Failed to load sleeping gallery');
       }
     } catch (error: any) {
-      showToast(error.message || 'Failed to load sleeping gallery', 'error');
+      showToast(toUserMessage(error, 'Failed to load sleeping gallery'), 'error');
     } finally {
       setLoading(false);
     }

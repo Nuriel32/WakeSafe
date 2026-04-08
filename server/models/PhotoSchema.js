@@ -40,36 +40,12 @@ const photoSchema = new mongoose.Schema({
     },
 
     // Location and Metadata
-    location: {
-        lat: { type: Number },
-        lng: { type: Number },
-        accuracy: { type: Number },
-        altitude: { type: Number },
-        speed: { type: Number },
-        heading: { type: Number },
-        timestamp: { type: Date }
-    },
+    // Stored as a light object when available; often null in local/dev.
+    location: { type: mongoose.Schema.Types.Mixed, default: null },
     clientMeta: {
-        userAgent: { type: String },
-        os: { type: String },
-        appVersion: { type: String },
-        model: { type: String },
-        deviceId: { type: String },
-        platform: { type: String },
-        captureType: { type: String, default: 'continuous' },
-        cameraSettings: {
-            resolution: { type: String },
-            quality: { type: Number },
-            flash: { type: Boolean },
-            focus: { type: String }
-        }
+        type: mongoose.Schema.Types.Mixed,
+        default: null,
     },
-
-    // File Information
-    fileSize: { type: Number },
-    contentType: { type: String },
-    originalName: { type: String },
-    fileName: { type: String },
     
     // Upload Information
     uploadStatus: { 
@@ -78,19 +54,14 @@ const photoSchema = new mongoose.Schema({
         default: 'pending' 
     },
     uploadMethod: { type: String, default: 'presigned' },
-    uploadDuration: { type: Number }, // in milliseconds
     uploadRetries: { type: Number, default: 0 },
     
     // Processing Information
-    processingQueuePosition: { type: Number },
     processingStartedAt: { type: Date },
     processingCompletedAt: { type: Date },
     
     // Quality and Validation
     imageQuality: {
-        blurScore: { type: Number },
-        brightness: { type: Number },
-        contrast: { type: Number },
         isValid: { type: Boolean, default: true }
     },
     
@@ -117,10 +88,6 @@ photoSchema.index({ folderType: 1 });
 photoSchema.index({ captureTimestamp: -1 });
 photoSchema.index({ uploadStatus: 1 });
 photoSchema.index({ uploadMethod: 1 });
-photoSchema.index({ processingQueuePosition: 1 });
-photoSchema.index({ 'location.lat': 1, 'location.lng': 1 });
-photoSchema.index({ 'clientMeta.deviceId': 1 });
-photoSchema.index({ 'clientMeta.captureType': 1 });
 photoSchema.index({ 'imageQuality.isValid': 1 });
 photoSchema.index({ createdAt: -1 });
 photoSchema.index({ updatedAt: -1 });
@@ -162,7 +129,6 @@ photoSchema.methods.addWebSocketEvent = function(eventType, data) {
 // Method to update upload status
 photoSchema.methods.updateUploadStatus = function(status, duration = null, retries = 0) {
     this.uploadStatus = status;
-    if (duration !== null) this.uploadDuration = duration;
     if (retries > 0) this.uploadRetries = retries;
     return this.save();
 };
@@ -170,7 +136,6 @@ photoSchema.methods.updateUploadStatus = function(status, duration = null, retri
 // Method to update processing status
 photoSchema.methods.updateProcessingStatus = function(status, queuePosition = null) {
     this.aiProcessingStatus = status;
-    if (queuePosition !== null) this.processingQueuePosition = queuePosition;
     if (status === 'processing') this.processingStartedAt = new Date();
     if (status === 'completed') this.processingCompletedAt = new Date();
     return this.save();
@@ -191,7 +156,7 @@ photoSchema.statics.getProcessingStats = function() {
                 drowsyPhotos: { $sum: { $cond: [{ $eq: ['$prediction', 'drowsy'] }, 1, 0] } },
                 sleepingPhotos: { $sum: { $cond: [{ $eq: ['$prediction', 'sleeping'] }, 1, 0] } },
                 avgProcessingTime: { $avg: '$aiResults.processingTime' },
-                avgUploadDuration: { $avg: '$uploadDuration' }
+                avgUploadRetries: { $avg: '$uploadRetries' }
             }
         }
     ]);

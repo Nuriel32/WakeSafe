@@ -2,6 +2,7 @@ import React, { createContext, PropsWithChildren, useCallback, useContext, useEf
 import { useAuth } from './useAuth';
 import { CONFIG } from '../config';
 import { Session } from '../types';
+import { requestJson, toUserMessage } from '../utils/network';
 
 interface SessionState {
   currentSession: Session | null;
@@ -47,32 +48,40 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!token) return;
 
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions/current`, {
-        headers: getAuthHeaders(),
-      });
-
-      if (response.ok) {
-        const raw = await response.json();
-        const session = unwrapApiData<Session | null>(raw);
-        setSessionState(prev => ({
-          ...prev,
-          currentSession: session,
-          error: null,
-        }));
-      } else if (response.status === 404) {
-        // No current session
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let response: Response;
+      try {
+        response = await fetch(`${CONFIG.API_BASE_URL}/sessions/current`, {
+          headers: getAuthHeaders(),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (response.status === 404) {
         setSessionState(prev => ({
           ...prev,
           currentSession: null,
           error: null,
         }));
-      } else {
-        throw new Error('Failed to load current session');
+        return;
       }
-    } catch (error: any) {
+      const raw = await response.json();
+      if (!response.ok) {
+        throw new Error(raw?.message || 'Failed to load current session');
+      }
+      const session = unwrapApiData<Session | null>(raw);
       setSessionState(prev => ({
         ...prev,
-        error: error.message || CONFIG.ERRORS.NETWORK,
+        currentSession: session,
+        error: null,
+      }));
+    } catch (error: any) {
+      const message = toUserMessage(error, CONFIG.ERRORS.NETWORK);
+      setSessionState(prev => ({
+        ...prev,
+        error: message,
       }));
     }
   }, [token, getAuthHeaders]);
@@ -85,17 +94,13 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
     setSessionState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions/start`, {
+      const raw = await requestJson(`${CONFIG.API_BASE_URL}/sessions/start`, {
         method: 'POST',
         headers: getAuthHeaders(),
+        timeoutMs: 12000,
+        fallbackMessage: 'Failed to start session',
       });
-
-      const raw = await response.json();
       const session = unwrapApiData<Session>(raw);
-
-      if (!response.ok) {
-        throw new Error(raw.message || 'Failed to start session');
-      }
 
       setSessionState(prev => ({
         ...prev,
@@ -106,12 +111,13 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
       return session;
     } catch (error: any) {
+      const message = toUserMessage(error, CONFIG.ERRORS.NETWORK);
       setSessionState(prev => ({
         ...prev,
         loading: false,
-        error: error.message || CONFIG.ERRORS.NETWORK,
+        error: message,
       }));
-      throw error;
+      throw new Error(message);
     }
   }, [token, getAuthHeaders]);
 
@@ -123,30 +129,13 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
     setSessionState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const url = `${CONFIG.API_BASE_URL}/sessions/${sessionId}`;
-      console.log('useSession.endSession -> Request', { url, sessionId });
-      const response = await fetch(url, {
+      const data = await requestJson(`${CONFIG.API_BASE_URL}/sessions/${sessionId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ status: 'ended' }),
+        timeoutMs: 12000,
+        fallbackMessage: 'Failed to end session',
       });
-      console.log('useSession.endSession -> Response status', response.status);
-      let data: any = null;
-      try {
-        const text = await response.text();
-        try {
-          data = text ? JSON.parse(text) : null;
-        } catch {
-          data = { raw: text };
-        }
-      } catch (e) {
-        console.log('useSession.endSession -> Failed to read response body', e);
-      }
-      console.log('useSession.endSession -> Response body', data);
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to end session');
-      }
 
       setSessionState(prev => ({
         ...prev,
@@ -157,13 +146,14 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
       return data;
     } catch (error: any) {
+      const message = toUserMessage(error, CONFIG.ERRORS.NETWORK);
       setSessionState(prev => ({
         ...prev,
         loading: false,
-        error: error.message || CONFIG.ERRORS.NETWORK,
+        error: message,
       }));
-      console.log('useSession.endSession -> Error', error?.message || error);
-      throw error;
+      console.log('useSession.endSession -> Error', message);
+      throw new Error(message);
     }
   }, [token, getAuthHeaders]);
 
@@ -172,25 +162,22 @@ export const SessionProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
     try {
       const includePhotos = opts?.includePhotos ? 'true' : 'false';
-      const response = await fetch(`${CONFIG.API_BASE_URL}/sessions?includePhotos=${includePhotos}`, {
+      const raw = await requestJson(`${CONFIG.API_BASE_URL}/sessions?includePhotos=${includePhotos}`, {
         headers: getAuthHeaders(),
+        timeoutMs: 12000,
+        fallbackMessage: 'Failed to load session history',
       });
-
-      if (response.ok) {
-        const raw = await response.json();
-        const sessions = unwrapApiData<Session[]>(raw);
-        setSessionState(prev => ({
-          ...prev,
-          sessionHistory: sessions,
-          error: null,
-        }));
-      } else {
-        throw new Error('Failed to load session history');
-      }
-    } catch (error: any) {
+      const sessions = unwrapApiData<Session[]>(raw);
       setSessionState(prev => ({
         ...prev,
-        error: error.message || CONFIG.ERRORS.NETWORK,
+        sessionHistory: sessions,
+        error: null,
+      }));
+    } catch (error: any) {
+      const message = toUserMessage(error, CONFIG.ERRORS.NETWORK);
+      setSessionState(prev => ({
+        ...prev,
+        error: message,
       }));
     }
   }, [token, getAuthHeaders]);

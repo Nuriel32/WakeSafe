@@ -11,18 +11,8 @@ const driverSessionSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   
   // Location Information
-  startLocation: {
-    lat: { type: Number },
-    lng: { type: Number },
-    accuracy: { type: Number },
-    address: { type: String }
-  },
-  endLocation: {
-    lat: { type: Number },
-    lng: { type: Number },
-    accuracy: { type: Number },
-    address: { type: String }
-  },
+  startLocation: { type: mongoose.Schema.Types.Mixed, default: null },
+  endLocation: { type: mongoose.Schema.Types.Mixed, default: null },
   route: [{
     lat: { type: Number },
     lng: { type: Number },
@@ -58,13 +48,7 @@ const driverSessionSchema = new mongoose.Schema({
   },
   
   // Device and Client Information
-  deviceInfo: {
-    platform: { type: String },
-    os: { type: String },
-    appVersion: { type: String },
-    deviceId: { type: String },
-    model: { type: String }
-  },
+  deviceInfo: { type: mongoose.Schema.Types.Mixed, default: null },
   
   // Session Configuration
   sessionConfig: {
@@ -112,7 +96,6 @@ driverSessionSchema.index({ userId: 1, startTime: -1 });
 driverSessionSchema.index({ startTime: -1 });
 driverSessionSchema.index({ endTime: -1 });
 driverSessionSchema.index({ status: 1 });
-driverSessionSchema.index({ 'startLocation.lat': 1, 'startLocation.lng': 1 });
 driverSessionSchema.index({ 'aiProcessingStats.alertCount': -1 });
 driverSessionSchema.index({ 'aiProcessingStats.drowsyCount': -1 });
 driverSessionSchema.index({ 'aiProcessingStats.sleepingCount': -1 });

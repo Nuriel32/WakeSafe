@@ -19,6 +19,8 @@ export interface Session {
   endTime?: string;
   duration?: number;
   totalImagesUploaded: number;
+  totalImagesProcessed?: number;
+  totalImagesFailed?: number;
   photos: string[];
   createdAt: string;
   updatedAt: string;
@@ -30,23 +32,20 @@ export interface Photo {
   userId: string;
   gcsPath: string;
   fileUrl?: string;
-  name: string;
+  // Not always returned by backend; mostly used client-side.
+  name?: string;
   location?: {
-    latitude?: number;
-    longitude?: number;
     lat?: number;
     lng?: number;
     accuracy?: number;
     timestamp?: number;
-  };
-  clientMeta?: {
-    userAgent: string;
-    timestamp: number;
-    fileSize: number;
-  };
-  prediction: 'pending' | 'alert' | 'drowsy' | 'sleeping' | 'unknown' | 'normal' | 'error';
-  aiProcessingStatus: 'pending' | 'processing' | 'completed' | 'failed' | 'error';
-  uploadStatus: 'pending' | 'uploading' | 'uploaded' | 'completed' | 'failed' | 'error';
+    latitude?: number;
+    longitude?: number;
+  } | null;
+  clientMeta?: Record<string, any> | null;
+  prediction: 'pending' | 'alert' | 'drowsy' | 'sleeping' | 'unknown';
+  aiProcessingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  uploadStatus: 'pending' | 'uploading' | 'uploaded' | 'failed';
   createdAt: string;
   updatedAt: string;
 }
