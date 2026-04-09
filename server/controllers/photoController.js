@@ -42,6 +42,8 @@ async function deleteSinglePhoto(photoId) {
     await Photo.deleteOne({ _id: photo._id });
     logger.info(`From PhotoController: Deleted photo document ${photoId} from MongoDB`);
 
+    await cache.invalidatePhotoCachesForUser(photo.userId, photo.sessionId);
+
     return true;
 }
 
@@ -178,6 +180,8 @@ exports.updatePhotoAIResults = async (req, res) => {
 
         // Update GCS metadata
         await updatePhotoProcessingStatus(photo.gcsPath, 'completed', results);
+
+        await cache.invalidatePhotoCachesForUser(photo.userId, photo.sessionId);
 
         logger.info(`From photoController: Updated AI results for photo ${id}, prediction: ${prediction}`);
 
