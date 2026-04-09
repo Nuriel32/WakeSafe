@@ -75,15 +75,18 @@ export const GalleryScreen: React.FC = () => {
       });
   };
 
-  const loadSleepingGallery = async () => {
+  const loadSleepingGallery = async (opts?: { bustCache?: boolean }) => {
     setLoading(true);
     try {
+      const bust = opts?.bustCache ? `&_=${Date.now()}` : '';
       const response = await fetch(
-        `${CONFIG.API_BASE_URL}/photos/gallery/sleeping-rides?maxRides=30&maxPhotosPerRide=40`,
+        `${CONFIG.API_BASE_URL}/photos/gallery/sleeping-rides?maxRides=30&maxPhotosPerRide=40${bust}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            Pragma: 'no-cache',
           },
         }
       );
@@ -105,7 +108,7 @@ export const GalleryScreen: React.FC = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadSleepingGallery();
+    await loadSleepingGallery({ bustCache: true });
     setRefreshing(false);
   };
 
@@ -135,23 +138,35 @@ export const GalleryScreen: React.FC = () => {
     }
   };
 
-  const getPredictionColor = (prediction: string) => {
+  const getPredictionColor = (prediction?: string | null) => {
     switch (prediction) {
       case 'sleeping':
         return '#ef4444';
       case 'drowsy':
         return '#f59e0b';
+      case 'alert':
+        return '#10b981';
+      case 'unknown':
+        return '#64748b';
+      case 'pending':
+        return '#94a3b8';
       default:
         return '#64748b';
     }
   };
 
-  const getPredictionText = (prediction: string) => {
+  const getPredictionText = (prediction?: string | null) => {
     switch (prediction) {
       case 'sleeping':
         return 'Sleeping';
       case 'drowsy':
         return 'Drowsy';
+      case 'alert':
+        return 'Awake';
+      case 'unknown':
+        return 'Unknown';
+      case 'pending':
+        return 'Pending';
       default:
         return 'Pending';
     }
@@ -278,11 +293,11 @@ export const GalleryScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Photo Gallery</Text>
+        <Text style={styles.title}>Fatigue captures</Text>
         <Text style={styles.subtitle}>
           {folders.length > 0
-            ? `${totalSleepingPhotos} sleeping photos in ${folders.length} session folders`
-            : 'No sleeping captures found'}
+            ? `${totalSleepingPhotos} frame${totalSleepingPhotos === 1 ? '' : 's'} classified as sleeping across ${folders.length} session${folders.length === 1 ? '' : 's'}`
+            : 'Only photos the model labeled as sleeping appear here'}
         </Text>
       </View>
 
