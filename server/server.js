@@ -25,8 +25,12 @@ const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
 const REDIS_PORT = Number(process.env.REDIS_PORT || 6379);
 
 // ---- Health endpoints (ready immediately) ----
+let mongoReady = false;
+mongoose.connection.on('connected', () => { mongoReady = true; });
+mongoose.connection.on('disconnected', () => { mongoReady = false; });
+
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
-app.get('/readyz', (_req, res) => res.status(200).send('ready'));
+app.get('/readyz', (_req, res) => (mongoReady ? res.status(200).send('ready') : res.status(503).send('not ready')));
 
 // ---- HTTP server + Socket.IO ----
 const server = http.createServer(app);
@@ -348,29 +352,26 @@ global.sendNotificationToUser = sendNotificationToUser;
 async function startServer() {
   try {
     console.log('🔄 Initializing dependencies...');
-    
-    // Connect to MongoDB first (critical dependency)
-    console.log('📊 Connecting to MongoDB...');
-    await connectMongo();
-    console.log('✅ MongoDB connected successfully');
-    
-    // Connect to Redis
-    console.log('🔴 Connecting to Redis...');
-    await connectRedis();
-    console.log('✅ Redis connected successfully');
-    
-    // Start the server only after all dependencies are ready
+
+    // Start HTTP immediately so health checks can pass even if Mongo is slow/unavailable.
     server.listen(PORT, HOST, () => {
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`🌐 HTTP listening on http://${HOST}:${PORT}`);
       console.log(`🔌 WebSocket listening on ws://${HOST}:${PORT}`);
-      console.log('✅ All dependencies initialized successfully');
     });
+
+    // Kick off Mongo/Redis initialization in background.
+    console.log('📊 Connecting to MongoDB...');
+    connectMongo()
+      .then(() => console.log('✅ MongoDB connected successfully'))
+      .catch((e) => console.error(`❌ MongoDB connect failed (continuing): ${e?.message || e}`));
+
+    console.log('🔴 Connecting to Redis...');
+    await connectRedis();
     
   } catch (error) {
     console.error('❌ Failed to initialize dependencies:', error.message);
-    console.error('❌ Server startup aborted');
-    process.exit(1);
+    console.error('❌ Server startup error (continuing):', error.message);
   }
 }
 
