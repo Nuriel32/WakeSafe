@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     drowsy_closed_ratio_threshold: float = Field(default=0.35, ge=0, le=1)
     sleeping_closed_ratio_threshold: float = Field(default=0.7, ge=0, le=1)
+    treat_partial_as_closed: bool = False
     avg_closure_threshold: float = Field(default=1.5, ge=0)
     blink_rate_low_threshold: float = Field(default=6.0, ge=0)
     blink_rate_high_threshold: float = Field(default=30.0, ge=0)

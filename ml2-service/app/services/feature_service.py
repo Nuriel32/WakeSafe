@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.core.config import settings
 from app.schemas.request import SequenceItem
 
 
@@ -12,9 +13,9 @@ class TemporalFeatures:
 
 
 class TemporalFeatureService:
-    # Count only explicit CLOSED frames as eye closure.
-    # Treating PARTIAL as closed caused aggressive false positives.
-    closed_states = {"CLOSED"}
+    def __init__(self) -> None:
+        # Make PARTIAL handling configurable for mobile-camera noise.
+        self.closed_states = {"CLOSED", "PARTIAL"} if settings.treat_partial_as_closed else {"CLOSED"}
 
     def extract(self, sequence: list[SequenceItem]) -> TemporalFeatures:
         ordered = sorted(sequence, key=lambda item: item.timestamp)

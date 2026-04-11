@@ -11,11 +11,12 @@ const cache = require('./cacheService');
 // This service handles communication with the AI server for fatigue detection
 
 const ML2_SEQUENCE_WINDOW_SIZE = parseInt(process.env.ML2_SEQUENCE_WINDOW_SIZE || '20', 10);
+const ML_MIN_SEQUENCE_FOR_DECISION = parseInt(process.env.ML_MIN_SEQUENCE_FOR_DECISION || '4', 10);
 const ML_ALERT_MIN_CONFIDENCE = Number(process.env.ML_ALERT_MIN_CONFIDENCE || 0.75);
 const ML_ALERT_MIN_SEVERITY = Number(process.env.ML_ALERT_MIN_SEVERITY || 0.7);
 const ML_ALERT_CONSECUTIVE_FRAMES = parseInt(process.env.ML_ALERT_CONSECUTIVE_FRAMES || '2', 10);
-const ML2_CLOSED_EAR_THRESHOLD = Number(process.env.ML2_CLOSED_EAR_THRESHOLD || 0.24);
-const ML2_PARTIAL_AS_CLOSED = String(process.env.ML2_PARTIAL_AS_CLOSED || 'true').toLowerCase() === 'true';
+const ML2_CLOSED_EAR_THRESHOLD = Number(process.env.ML2_CLOSED_EAR_THRESHOLD || 0.2);
+const ML2_PARTIAL_AS_CLOSED = String(process.env.ML2_PARTIAL_AS_CLOSED || 'false').toLowerCase() === 'true';
 
 function validateMl1Payload(payload) {
   if (!payload || typeof payload !== 'object') throw new Error('Invalid ML1 payload');
@@ -78,6 +79,20 @@ function normalizeGcsPath(gcsPath) {
   }
 
   return `gs://${bucket}/${gcsPath}`;
+}
+
+function buildCameraGuidance(frame) {
+  const visionStatus = String(frame?.vision_status || 'ok').toLowerCase();
+  if (visionStatus === 'no_eyes_detected' || String(frame?.eye_state || '').toUpperCase() === 'UNKNOWN') {
+    return {
+      code: 'no_eyes_detected',
+      message:
+        frame?.guidance_message
+        || 'Eyes are not clearly visible. Center your face in frame and improve lighting.',
+      severity: 'warning',
+    };
+  }
+  return null;
 }
 
 async function buildTemporalSequence(sessionId, currentFrame) {
@@ -178,38 +193,69 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
     const ml1Response = await mlAdapter.ml1Predict(ml1Payload);
     validateMl1Response(ml1Response);
     const frame = ml1Response?.frame_analysis;
+    const cameraGuidance = buildCameraGuidance(frame);
 
-    const ml2CurrentFrame = {
-      timestamp: frame.processed_at || new Date().toISOString(),
-      eye_state: mapFrameToTemporalEyeState(frame),
-      confidence: Number(frame.confidence || 0),
-      ear: frame.ear ?? null,
-      head_pose: {
-        pitch: frame.head_pose?.pitch ?? null,
-        yaw: frame.head_pose?.yaw ?? null,
-        roll: frame.head_pose?.roll ?? null,
-      },
-    };
+    let sequence = [];
+    let ml2Response;
+    if (cameraGuidance) {
+      ml2Response = {
+        user_id: photoDoc.userId?.toString() || null,
+        session_id: photoDoc.sessionId?.toString() || null,
+        driver_state: 'unknown',
+        fatigued: false,
+        severity: 0,
+        features: {
+          blink_rate: 0,
+          avg_eye_closure_time: 0,
+          max_eye_closure_time: 0,
+          closed_eye_ratio: 0,
+        },
+        processing_time_ms: 0,
+        processed_at: new Date().toISOString(),
+      };
+    } else {
+      const ml2CurrentFrame = {
+        timestamp: frame.processed_at || new Date().toISOString(),
+        eye_state: mapFrameToTemporalEyeState(frame),
+        confidence: Number(frame.confidence || 0),
+        ear: frame.ear ?? null,
+        head_pose: {
+          pitch: frame.head_pose?.pitch ?? null,
+          yaw: frame.head_pose?.yaw ?? null,
+          roll: frame.head_pose?.roll ?? null,
+        },
+      };
 
-    const sequence = await buildTemporalSequence(photoDoc.sessionId, ml2CurrentFrame);
-    const ml2Payload = {
-      user_id: photoDoc.userId?.toString() || null,
-      session_id: photoDoc.sessionId?.toString() || null,
-      sequence,
-    };
+      sequence = await buildTemporalSequence(photoDoc.sessionId, ml2CurrentFrame);
+      const ml2Payload = {
+        user_id: photoDoc.userId?.toString() || null,
+        session_id: photoDoc.sessionId?.toString() || null,
+        sequence,
+      };
 
-    validateMl2Payload(ml2Payload);
-    const ml2Response = await mlAdapter.ml2Analyze(ml2Payload);
-    validateMl2Response(ml2Response);
+      validateMl2Payload(ml2Payload);
+      ml2Response = await mlAdapter.ml2Analyze(ml2Payload);
+      validateMl2Response(ml2Response);
+      if (sequence.length < ML_MIN_SEQUENCE_FOR_DECISION) {
+        // Warm-up guard: early frames are unstable and can produce false positives.
+        ml2Response = {
+          ...ml2Response,
+          driver_state: 'alert',
+          fatigued: false,
+          severity: Math.min(Number(ml2Response?.severity || 0), 0.25),
+        };
+      }
+    }
     log.info('ml_pipeline_frame_debug', {
       ml1EyeState: frame.eye_state || 'UNKNOWN',
-      temporalEyeState: ml2CurrentFrame.eye_state,
+      temporalEyeState: cameraGuidance ? 'UNKNOWN' : mapFrameToTemporalEyeState(frame),
       ear: frame.ear ?? null,
       confidence: Number(frame.confidence || 0),
       sequenceSize: sequence.length,
       ml2DriverState: ml2Response?.driver_state || 'unknown',
       ml2Severity: Number(ml2Response?.severity || 0),
       ml2Features: ml2Response?.features || {},
+      cameraGuidanceCode: cameraGuidance?.code || null,
     });
     const finalPrediction = ml2Response?.driver_state || 'unknown';
     const totalProcessingTime = Date.now() - startedAt;
@@ -314,6 +360,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
           ml2: ml2Response,
           prediction: finalPrediction,
           alertEmitted,
+          cameraGuidance,
         },
         totalProcessingTime
       );
@@ -326,6 +373,14 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
           processingTime: totalProcessingTime,
         });
       }
+    }
+    if (cameraGuidance && global.sendNotificationToUser) {
+      global.sendNotificationToUser(
+        photoDoc.userId?.toString(),
+        cameraGuidance.message,
+        'warning',
+        4000
+      );
     }
 
     log.info('ai_processing_completed', {

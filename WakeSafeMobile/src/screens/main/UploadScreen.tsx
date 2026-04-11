@@ -42,6 +42,7 @@ export const UploadScreen: React.FC = () => {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const tokenRef = useRef<string | null>(null);
+  const lastCameraGuidanceAtRef = useRef<number>(0);
   
   // Camera ref
   const cameraRef = useRef<CameraView>(null);
@@ -175,6 +176,10 @@ export const UploadScreen: React.FC = () => {
       // Check camera permissions for existing session
       const startCaptureWithPermissions = async () => {
         try {
+          if (cameraService.getStatus().isCapturing) {
+            console.log('UploadScreen: Capture already active, skipping restart for existing session');
+            return;
+          }
           const hasPermission = await checkCameraPermission();
           if (!hasPermission) {
             console.log('UploadScreen: Camera permission not granted for existing session');
@@ -297,6 +302,17 @@ export const UploadScreen: React.FC = () => {
 
   const handleAIProcessingComplete = (data: any) => {
     console.log('UploadScreen: AI processing complete via WebSocket:', data);
+    const guidance = data?.results?.cameraGuidance;
+    if (guidance?.code === 'no_eyes_detected') {
+      const now = Date.now();
+      if (now - lastCameraGuidanceAtRef.current > 5000) {
+        showToast(
+          guidance.message || 'Eyes are not visible. Move camera to center your face.',
+          'info'
+        );
+        lastCameraGuidanceAtRef.current = now;
+      }
+    }
   };
 
   const handleFatigueSafeStop = (data: FatigueSafeStopEvent) => {

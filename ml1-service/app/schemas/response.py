@@ -14,6 +14,8 @@ class FrameAnalysisResponse(BaseModel):
     eye_state: Literal["OPEN", "CLOSED", "PARTIAL", "UNKNOWN"]
     confidence: float = Field(ge=0, le=1)
     ear: Optional[float] = None
+    vision_status: Literal["ok", "no_eyes_detected"] = "ok"
+    guidance_message: Optional[str] = None
     head_pose: HeadPoseResponse
     processing_time_ms: int = Field(ge=0)
     processed_at: datetime
