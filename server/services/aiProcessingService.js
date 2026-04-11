@@ -14,6 +14,8 @@ const ML2_SEQUENCE_WINDOW_SIZE = parseInt(process.env.ML2_SEQUENCE_WINDOW_SIZE |
 const ML_ALERT_MIN_CONFIDENCE = Number(process.env.ML_ALERT_MIN_CONFIDENCE || 0.75);
 const ML_ALERT_MIN_SEVERITY = Number(process.env.ML_ALERT_MIN_SEVERITY || 0.7);
 const ML_ALERT_CONSECUTIVE_FRAMES = parseInt(process.env.ML_ALERT_CONSECUTIVE_FRAMES || '2', 10);
+const ML2_CLOSED_EAR_THRESHOLD = Number(process.env.ML2_CLOSED_EAR_THRESHOLD || 0.24);
+const ML2_PARTIAL_AS_CLOSED = String(process.env.ML2_PARTIAL_AS_CLOSED || 'true').toLowerCase() === 'true';
 
 function validateMl1Payload(payload) {
   if (!payload || typeof payload !== 'object') throw new Error('Invalid ML1 payload');
@@ -48,8 +50,17 @@ function validateMl2Response(response) {
 function mapEarToEyeState(ear) {
   if (ear == null || Number.isNaN(Number(ear))) return 'UNKNOWN';
   const value = Number(ear);
-  // Be conservative: only strong closure is considered CLOSED.
-  return value < 0.18 ? 'CLOSED' : 'OPEN';
+  return value < ML2_CLOSED_EAR_THRESHOLD ? 'CLOSED' : 'OPEN';
+}
+
+function mapFrameToTemporalEyeState(frame) {
+  const ml1EyeState = String(frame?.eye_state || 'UNKNOWN').toUpperCase();
+  const earState = mapEarToEyeState(frame?.ear);
+
+  if (ml1EyeState === 'CLOSED') return 'CLOSED';
+  if (ml1EyeState === 'OPEN') return 'OPEN';
+  if (ml1EyeState === 'PARTIAL') return ML2_PARTIAL_AS_CLOSED ? earState : 'OPEN';
+  return earState;
 }
 
 function normalizeGcsPath(gcsPath) {
@@ -170,7 +181,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
 
     const ml2CurrentFrame = {
       timestamp: frame.processed_at || new Date().toISOString(),
-      eye_state: frame.eye_state || 'UNKNOWN',
+      eye_state: mapFrameToTemporalEyeState(frame),
       confidence: Number(frame.confidence || 0),
       ear: frame.ear ?? null,
       head_pose: {
@@ -190,6 +201,16 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
     validateMl2Payload(ml2Payload);
     const ml2Response = await mlAdapter.ml2Analyze(ml2Payload);
     validateMl2Response(ml2Response);
+    log.info('ml_pipeline_frame_debug', {
+      ml1EyeState: frame.eye_state || 'UNKNOWN',
+      temporalEyeState: ml2CurrentFrame.eye_state,
+      ear: frame.ear ?? null,
+      confidence: Number(frame.confidence || 0),
+      sequenceSize: sequence.length,
+      ml2DriverState: ml2Response?.driver_state || 'unknown',
+      ml2Severity: Number(ml2Response?.severity || 0),
+      ml2Features: ml2Response?.features || {},
+    });
     const finalPrediction = ml2Response?.driver_state || 'unknown';
     const totalProcessingTime = Date.now() - startedAt;
 

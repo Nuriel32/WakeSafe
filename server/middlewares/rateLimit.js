@@ -53,6 +53,16 @@ function buildRateLimiter(opts = {}) {
   });
 }
 
+/** True for presigned URL flow routes (must not count against multipart /upload limiter). */
+function isPresignedFlowPath(req) {
+  const p = req.path || (req.originalUrl || '').split('?')[0] || '';
+  return (
+    p.endsWith('/presigned') ||
+    p.endsWith('/confirm') ||
+    p.includes('/upload/status/')
+  );
+}
+
 // Specialized rate limiters for different endpoints
 const authLimiter = buildRateLimiter({ 
   max: 10, // Increased for development
@@ -60,13 +70,15 @@ const authLimiter = buildRateLimiter({
   message: 'Too many authentication attempts, please try again in 5 minutes.'
 });
 
+// Multipart POST /api/upload only. Presigned + confirm use presignedUploadLimiter.
+const multipartUploadMax = parseInt(process.env.MULTIPART_UPLOAD_RATE_LIMIT_MAX || '120', 10);
+
 const uploadLimiter = buildRateLimiter({ 
-  max: 10, 
+  max: multipartUploadMax,
   windowMs: 60 * 1000, // 1 minute
   message: 'Too many upload attempts, please slow down.',
   keyPrefix: 'upload',
-  // Presigned flow has its own dedicated limiter.
-  skip: (req) => req.path.startsWith('/presigned') || req.path.startsWith('/confirm') || req.path.startsWith('/status/')
+  skip: (req) => isPresignedFlowPath(req),
 });
 
 // Presigned flow requires higher throughput for continuous capture.
