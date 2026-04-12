@@ -13,9 +13,13 @@ const CONFIG = {
     ALLOWED_FILE_TYPES: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
     MAX_FILES_PER_UPLOAD: 10,
     
-    // WebSocket Configuration
+    // WebSocket / Socket.IO Configuration
     WS_RECONNECT_INTERVAL: 5000,
     WS_MAX_RECONNECT_ATTEMPTS: 5,
+
+    // Fatigue warning sound (relative to the page URL, e.g. client app root)
+    FATIGUE_ALERT_SOUND_URL: 'sounds/driver-fatigue-warning.mp3',
+    FATIGUE_ALERT_SOUND_MIN_INTERVAL_MS: 10000,
     
     // UI Configuration
     NOTIFICATION_DURATION: 5000,
