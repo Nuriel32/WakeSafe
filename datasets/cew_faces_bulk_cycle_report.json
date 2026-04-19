@@ -1,0 +1,90 @@
+{
+  "dataset_root": "datasets/cew_faces_100x100/dataset_B_FacialImages",
+  "sample_count": 2423,
+  "open_count": 1231,
+  "closed_count": 1192,
+  "feature_stats": {
+    "open_mean_luma_avg": 128.9254,
+    "closed_mean_luma_avg": 145.7123,
+    "open_std_luma_avg": 36.9989,
+    "closed_std_luma_avg": 35.1801
+  },
+  "baseline": {
+    "accuracy": 0.371853,
+    "balanced_accuracy": 0.372036,
+    "open_recall": 0.360682,
+    "closed_recall": 0.383389,
+    "open_as_open": 444,
+    "open_as_closed": 787,
+    "closed_as_open": 735,
+    "closed_as_closed": 457,
+    "pred_OPEN": 1007,
+    "pred_CLOSED": 1244,
+    "pred_PARTIAL": 171,
+    "pred_UNKNOWN": 1
+  },
+  "best": {
+    "accuracy": 0.544779,
+    "balanced_accuracy": 0.542874,
+    "open_recall": 0.661251,
+    "closed_recall": 0.424497,
+    "open_as_open": 814,
+    "open_as_closed": 417,
+    "closed_as_open": 686,
+    "closed_as_closed": 506,
+    "pred_OPEN": 1271,
+    "pred_CLOSED": 923,
+    "pred_PARTIAL": 228,
+    "pred_UNKNOWN": 1
+  },
+  "best_params": {
+    "no_eyes_mean_low": 55.0,
+    "no_eyes_mean_high": 225.0,
+    "no_eyes_std_max": 10.0,
+    "closed_mean_luma_threshold": 130.0,
+    "closed_std_luma_threshold": 55.0,
+    "closed_high_mean_luma_threshold": 168.0,
+    "closed_high_std_luma_threshold": 52.0,
+    "open_std_luma_threshold": 60.0,
+    "open_mid_std_luma_threshold": 30.23,
+    "open_mid_mean_luma_max": 129.15,
+    "partial_band_mean_min": 132.0,
+    "partial_band_mean_max": 133.5,
+    "partial_band_std_min": 52.5,
+    "partial_band_std_max": 56.0,
+    "closed_mid_mean_luma_max": 178.95,
+    "closed_mid_std_luma_max": 34.15,
+    "partial_mean_luma_threshold": 145.0,
+    "partial_std_luma_threshold": 60.0
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "balanced_accuracy": 0.538207,
+      "accuracy": 0.540239,
+      "open_recall": 0.6645,
+      "closed_recall": 0.411913
+    },
+    {
+      "cycle": 2,
+      "balanced_accuracy": 0.542874,
+      "accuracy": 0.544779,
+      "open_recall": 0.661251,
+      "closed_recall": 0.424497
+    },
+    {
+      "cycle": 3,
+      "balanced_accuracy": 0.542874,
+      "accuracy": 0.544779,
+      "open_recall": 0.661251,
+      "closed_recall": 0.424497
+    },
+    {
+      "cycle": 4,
+      "balanced_accuracy": 0.542874,
+      "accuracy": 0.544779,
+      "open_recall": 0.661251,
+      "closed_recall": 0.424497
+    }
+  ]
+}

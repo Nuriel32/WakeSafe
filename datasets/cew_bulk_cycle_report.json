@@ -1,0 +1,90 @@
+{
+  "dataset_root": "datasets/cew_eye_patches_24x24/dataset_B_Eye_Images",
+  "sample_count": 4846,
+  "open_count": 2462,
+  "closed_count": 2384,
+  "feature_stats": {
+    "open_mean_luma_avg": 84.8416,
+    "closed_mean_luma_avg": 109.3967,
+    "open_std_luma_avg": 28.546,
+    "closed_std_luma_avg": 32.3097
+  },
+  "baseline": {
+    "accuracy": 0.388568,
+    "balanced_accuracy": 0.394127,
+    "open_recall": 0.048741,
+    "closed_recall": 0.739513,
+    "open_as_open": 120,
+    "open_as_closed": 2342,
+    "closed_as_open": 621,
+    "closed_as_closed": 1763,
+    "pred_OPEN": 559,
+    "pred_CLOSED": 4105,
+    "pred_PARTIAL": 134,
+    "pred_UNKNOWN": 48
+  },
+  "best": {
+    "accuracy": 0.46884,
+    "balanced_accuracy": 0.470855,
+    "open_recall": 0.345654,
+    "closed_recall": 0.596057,
+    "open_as_open": 851,
+    "open_as_closed": 1611,
+    "closed_as_open": 963,
+    "closed_as_closed": 1421,
+    "pred_OPEN": 1583,
+    "pred_CLOSED": 3032,
+    "pred_PARTIAL": 183,
+    "pred_UNKNOWN": 48
+  },
+  "best_params": {
+    "no_eyes_mean_low": 55.0,
+    "no_eyes_mean_high": 225.0,
+    "no_eyes_std_max": 10.0,
+    "closed_mean_luma_threshold": 130.0,
+    "closed_std_luma_threshold": 55.0,
+    "closed_high_mean_luma_threshold": 168.0,
+    "closed_high_std_luma_threshold": 52.0,
+    "open_std_luma_threshold": 60.0,
+    "open_mid_std_luma_threshold": 21.53,
+    "open_mid_mean_luma_max": 83.42,
+    "partial_band_mean_min": 132.0,
+    "partial_band_mean_max": 133.5,
+    "partial_band_std_min": 52.5,
+    "partial_band_std_max": 56.0,
+    "closed_mid_mean_luma_max": 142.25,
+    "closed_mid_std_luma_max": 40.65,
+    "partial_mean_luma_threshold": 145.0,
+    "partial_std_luma_threshold": 60.0
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "balanced_accuracy": 0.469264,
+      "accuracy": 0.471936,
+      "open_recall": 0.635256,
+      "closed_recall": 0.303272
+    },
+    {
+      "cycle": 2,
+      "balanced_accuracy": 0.469264,
+      "accuracy": 0.471936,
+      "open_recall": 0.635256,
+      "closed_recall": 0.303272
+    },
+    {
+      "cycle": 3,
+      "balanced_accuracy": 0.470855,
+      "accuracy": 0.46884,
+      "open_recall": 0.345654,
+      "closed_recall": 0.596057
+    },
+    {
+      "cycle": 4,
+      "balanced_accuracy": 0.470855,
+      "accuracy": 0.46884,
+      "open_recall": 0.345654,
+      "closed_recall": 0.596057
+    }
+  ]
+}
