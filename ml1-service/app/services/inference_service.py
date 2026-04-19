@@ -28,6 +28,8 @@ class FrameInferenceService:
             eye_state=model_out["eye_state"],
             confidence=model_out["confidence"],
             ear=model_out["ear"],
+            vision_status=model_out.get("vision_status", "ok"),
+            guidance_message=model_out.get("guidance_message"),
             head_pose=HeadPoseResponse(**model_out["head_pose"]),
             processing_time_ms=processing_time_ms,
             processed_at=utc_now(),

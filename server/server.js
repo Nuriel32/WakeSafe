@@ -5,6 +5,7 @@ const http = require('http');
 const app = require('./app');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const logger = require('./utils/logger');
 const connectMongo = require('./config/db');
 const monitoring = require('./services/monitoringService');
