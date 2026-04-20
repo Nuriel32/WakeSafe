@@ -3,6 +3,7 @@ const DriverSession = require('../models/DriverSession');
 const {
     deleteFile,
     generateSignedUrl,
+    getPublicBaseUrlFromRequest,
     getUnprocessedPhotos: getGCSUnprocessedPhotos,
     updatePhotoProcessingStatus
 } = require('../services/gcpStorageService');
@@ -69,12 +70,13 @@ async function deleteMultiplePhotos(photoIds = []) {
     return { deleted, errors };
 }
 
-async function enrichPhotosWithFileUrl(photos = []) {
+async function enrichPhotosWithFileUrl(photos = [], req) {
+    const publicBaseUrl = getPublicBaseUrlFromRequest(req);
     return Promise.all(
         photos.map(async (photo) => {
             let fileUrl = photo.gcsPath;
             try {
-                fileUrl = await generateSignedUrl(photo.gcsPath, 60);
+                fileUrl = await generateSignedUrl(photo.gcsPath, 60, { publicBaseUrl });
             } catch (error) {
                 logger.warn(`From photoController: Failed to generate signed URL for photo ${photo._id}: ${error.message}`);
             }
@@ -206,7 +208,8 @@ exports.getSessionPhotos = async (req, res) => {
         const { sessionId } = req.params;
         const limit = Math.min(parseInt(req.query.limit || '100', 10), 300);
         const { prediction } = req.query;
-        const cacheKey = `session_photos:${sessionId}:${prediction || 'all'}:${limit}`;
+        const hostKey = req.get('host') || 'default';
+        const cacheKey = `session_photos:${sessionId}:${prediction || 'all'}:${limit}:${hostKey}`;
         const cached = await cache.get(cacheKey);
         if (cached) {
             return res.json(cached);
@@ -224,7 +227,7 @@ exports.getSessionPhotos = async (req, res) => {
             .populate('userId', 'firstName lastName')
             .lean();
 
-        const enrichedPhotos = await enrichPhotosWithFileUrl(photos);
+        const enrichedPhotos = await enrichPhotosWithFileUrl(photos, req);
 
         logger.info(`From photoController: Retrieved ${enrichedPhotos.length} photos for session ${sessionId}`);
 
@@ -295,7 +298,7 @@ exports.getSleepingGalleryByRide = async (req, res) => {
         for (const sessionId of sessionIds) {
             const photos = bySession.get(sessionId) || [];
             const limitedPhotos = photos.slice(0, maxPhotosPerRide);
-            const enrichedPhotos = await enrichPhotosWithFileUrl(limitedPhotos);
+            const enrichedPhotos = await enrichPhotosWithFileUrl(limitedPhotos, req);
             rides.push({
                 ride: sessionMap.get(sessionId) || { _id: sessionId },
                 sleepingPhotoCount: photos.length,

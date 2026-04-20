@@ -9,6 +9,7 @@ class TemporalFeatures:
     avg_eye_closure_time: float
     max_eye_closure_time: float
     closed_eye_ratio: float
+    frame_count: int
 
 
 class TemporalFeatureService:
@@ -57,6 +58,7 @@ class TemporalFeatureService:
             avg_eye_closure_time=round(avg_eye_closure_time, 4),
             max_eye_closure_time=round(max_eye_closure_time, 4),
             closed_eye_ratio=round(closed_eye_ratio, 4),
+            frame_count=total,
         )
 
     @staticmethod

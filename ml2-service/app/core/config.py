@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     avg_closure_threshold: float = Field(default=1.5, ge=0)
     blink_rate_low_threshold: float = Field(default=6.0, ge=0)
     blink_rate_high_threshold: float = Field(default=30.0, ge=0)
+    # Require this many frames before drowsy/sleeping can trigger. Prevents a single
+    # misclassified CLOSED frame from producing closed_eye_ratio=1.0 and instant sleeping.
+    min_frames_for_fatigue: int = Field(default=4, ge=1, le=100)
 
     model_config = SettingsConfigDict(env_prefix="ML2_", extra="ignore")
 
