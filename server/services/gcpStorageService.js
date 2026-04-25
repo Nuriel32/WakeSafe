@@ -17,6 +17,22 @@ function getLocalBaseUrl() {
   return process.env.LOCAL_UPLOAD_BASE_URL || `http://127.0.0.1:${process.env.PORT || 5000}`;
 }
 
+/**
+ * Build the API base URL as seen by the HTTP client (e.g. phone on LAN uses 192.168.x.x, not 127.0.0.1).
+ * Used for local static /local-uploads URLs so React Native Image can load thumbnails.
+ */
+function getPublicBaseUrlFromRequest(req) {
+  if (!req || typeof req.get !== 'function') return null;
+  const host = req.get('host');
+  if (!host) return null;
+  let proto = req.protocol || 'http';
+  const forwarded = req.headers['x-forwarded-proto'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    proto = forwarded.split(',')[0].trim();
+  }
+  return `${proto}://${host}`;
+}
+
 function ensureLocalDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
@@ -213,12 +229,13 @@ async function generatePresignedUploadUrl(fileName, contentType, expiresInMinute
   }
 }
 
-async function generateSignedUrl(gcsPath, expiresInMinutes = 60) {
+async function generateSignedUrl(gcsPath, expiresInMinutes = 60, options = {}) {
   try {
     if (isLocalStorage()) {
       const relativePath = normalizeStoragePath(gcsPath);
       const encoded = relativePath.split('/').map(encodeURIComponent).join('/');
-      return `${getLocalBaseUrl()}/local-uploads/${encoded}`;
+      const base = (options.publicBaseUrl || getLocalBaseUrl()).replace(/\/$/, '');
+      return `${base}/local-uploads/${encoded}`;
     }
     checkGCSAvailability();
     
@@ -320,6 +337,7 @@ module.exports = {
   deleteFile,
   generatePresignedUploadUrl,
   generateSignedUrl,
+  getPublicBaseUrlFromRequest,
   getSessionPhotos,
   getUnprocessedPhotos,
   updatePhotoProcessingStatus,

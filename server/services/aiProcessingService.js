@@ -45,11 +45,15 @@ function validateMl2Response(response) {
   }
 }
 
-function mapEarToEyeState(ear) {
+function normalizeEyeState(value) {
+  const eyeState = String(value || '').toUpperCase();
+  if (['OPEN', 'CLOSED', 'PARTIAL', 'UNKNOWN'].includes(eyeState)) return eyeState;
+  return 'UNKNOWN';
+}
+
+function mapEarToEyeStateFallback(ear) {
   if (ear == null || Number.isNaN(Number(ear))) return 'UNKNOWN';
-  const value = Number(ear);
-  // Be conservative: only strong closure is considered CLOSED.
-  return value < 0.18 ? 'CLOSED' : 'OPEN';
+  return Number(ear) < 0.18 ? 'CLOSED' : 'OPEN';
 }
 
 function normalizeGcsPath(gcsPath) {
@@ -74,7 +78,8 @@ async function buildTemporalSequence(sessionId, currentFrame) {
     sessionId,
     aiProcessingStatus: 'completed',
   })
-    .sort({ captureTimestamp: -1, uploadedAt: -1 })
+    // Sort by capture order first so concurrent uploads do not scramble temporal features.
+    .sort({ sequenceNumber: -1, captureTimestamp: -1, uploadedAt: -1 })
     .limit(Math.max(ML2_SEQUENCE_WINDOW_SIZE - 1, 1))
     .lean();
 
@@ -82,7 +87,10 @@ async function buildTemporalSequence(sessionId, currentFrame) {
     .filter((item) => item?.aiResults?.processedAt)
     .map((item) => ({
       timestamp: new Date(item.aiResults.processedAt).toISOString(),
-      eye_state: mapEarToEyeState(item.aiResults?.ear),
+      eye_state:
+        normalizeEyeState(item.aiResults?.eyeState) !== 'UNKNOWN'
+          ? normalizeEyeState(item.aiResults?.eyeState)
+          : mapEarToEyeStateFallback(item.aiResults?.ear),
       confidence: Number(item.aiResults?.confidence || 0),
       ear: item.aiResults?.ear ?? null,
       head_pose: {
@@ -170,7 +178,7 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
 
     const ml2CurrentFrame = {
       timestamp: frame.processed_at || new Date().toISOString(),
-      eye_state: frame.eye_state || 'UNKNOWN',
+      eye_state: normalizeEyeState(frame.eye_state),
       confidence: Number(frame.confidence || 0),
       ear: frame.ear ?? null,
       head_pose: {
@@ -197,6 +205,9 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
       prediction: finalPrediction,
       confidence: Number(frame.confidence || 0),
       ear: frame.ear ?? null,
+      eyeState: normalizeEyeState(frame.eye_state),
+      visionStatus: frame.vision_status || 'ok',
+      guidanceMessage: frame.guidance_message || null,
       headPose: {
         pitch: frame.head_pose?.pitch ?? null,
         yaw: frame.head_pose?.yaw ?? null,
@@ -306,6 +317,16 @@ async function queuePhotoForProcessing(photoDoc, signedUrl) {
         });
       }
     }
+
+    log.info('ml_pipeline_frame_debug', {
+      sequenceNumber: photoDoc.sequenceNumber ?? null,
+      ml1EyeState: normalizeEyeState(frame.eye_state),
+      ml1Ear: frame.ear ?? null,
+      ml1VisionStatus: frame.vision_status || 'ok',
+      ml2DriverState: ml2Response?.driver_state || 'unknown',
+      ml2Severity: Number(ml2Response?.severity || 0),
+      ml2Fatigued: Boolean(ml2Response?.fatigued),
+    });
 
     log.info('ai_processing_completed', {
       prediction: finalPrediction,

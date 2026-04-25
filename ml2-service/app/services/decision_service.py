@@ -30,6 +30,7 @@ class TemporalDecisionService:
                 avg_eye_closure_time=features.avg_eye_closure_time,
                 max_eye_closure_time=features.max_eye_closure_time,
                 closed_eye_ratio=features.closed_eye_ratio,
+                frame_count=features.frame_count,
             ),
             processing_time_ms=processing_time_ms,
             processed_at=utc_now(),

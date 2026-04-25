@@ -1,34 +1,79 @@
+from pathlib import Path
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_DEFAULT_MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
+
+
 class Settings(BaseSettings):
+    """Configuration for the ML1 (frame-level eye state) service.
+
+    The service runs a real CNN classifier (open-closed-eye-0001) backed by
+    detector + landmark models. Heuristic logic is no longer the source of
+    truth and exists only as an optional last-resort fallback.
+    """
+
     service_name: str = "WakeSafe ML1 Service"
-    service_version: str = "1.0.0"
+    service_version: str = "2.0.0"
     log_level: str = "INFO"
-    model_provider_name: str = "mobilevitv2-placeholder"
     request_timeout_seconds: float = Field(default=10.0, gt=0)
-    # Placeholder classifier thresholds (tuned for mobile front camera conditions).
-    closed_mean_luma_threshold: float = Field(default=130.0, ge=0)
-    closed_std_luma_threshold: float = Field(default=55.0, ge=0)
-    closed_high_mean_luma_threshold: float = Field(default=168.0, ge=0)
-    closed_high_std_luma_threshold: float = Field(default=52.0, ge=0)
-    open_std_luma_threshold: float = Field(default=60.0, ge=0)
-    open_mid_std_luma_threshold: float = Field(default=56.0, ge=0)
-    open_mid_mean_luma_max: float = Field(default=128.0, ge=0)
-    partial_band_mean_min: float = Field(default=133.0, ge=0)
-    partial_band_mean_max: float = Field(default=135.5, ge=0)
-    partial_band_std_min: float = Field(default=53.5, ge=0)
-    partial_band_std_max: float = Field(default=56.0, ge=0)
-    closed_mid_mean_luma_max: float = Field(default=140.0, ge=0)
-    closed_mid_std_luma_max: float = Field(default=54.5, ge=0)
-    partial_mean_luma_threshold: float = Field(default=145.0, ge=0)
-    partial_std_luma_threshold: float = Field(default=60.0, ge=0)
-    no_eyes_mean_low: float = Field(default=55.0, ge=0)
-    no_eyes_mean_high: float = Field(default=225.0, ge=0)
-    no_eyes_std_max: float = Field(default=10.0, ge=0)
+
+    # ---- Model artifacts (OpenVINO IR / ONNX) ----
+    models_dir: Path = Field(default=_DEFAULT_MODELS_DIR)
+
+    # Face detector (OpenVINO IR). Inputs: 1x3x300x300 BGR.
+    face_detector_xml: str = Field(default="face-detection-retail-0004.xml")
+    face_detector_min_confidence: float = Field(default=0.5, ge=0, le=1)
+
+    # 5-point landmark regressor (OpenVINO IR). Inputs: 1x3x48x48 BGR.
+    landmarks_xml: str = Field(default="landmarks-regression-retail-0009.xml")
+
+    # Eye state classifier (OpenVINO IR with baked preprocessing).
+    eye_classifier_xml: str = Field(default="open_closed_eye_ir.xml")
+    eye_classifier_onnx: str = Field(default="open_closed_eye.onnx")
+
+    # The classifier output index for the "open" class. Documented as 0 in
+    # the public model card, but in practice the trained ONNX returns
+    # [closed, open]; verified empirically on MRL Eye Dataset (~95% acc).
+    eye_classifier_open_index: int = Field(default=1, ge=0, le=1)
+
+    # ---- Model identity ----
+    model_version: str = Field(
+        default="open-closed-eye-0001+landmarks-0009+face-retail-0004"
+    )
+    model_checksum_sha384: str = Field(
+        default=(
+            "2615bce53b55620c629db21b043057600ccc53466f053c0a8277c43577c2db21"
+            "e48f330cf9b15213016d17cddb8cba27"
+        )
+    )
+    runtime: Literal["openvino", "onnxruntime"] = Field(default="openvino")
+    device: str = Field(default="CPU")
+
+    # ---- Decision thresholds ----
+    # Eye crop size as a multiple of inter-eye distance. A whole-eye region
+    # (~1.0 of inter-eye distance) gives the classifier enough context.
+    eye_crop_scale: float = Field(default=1.0, gt=0)
+
+    # Probability bands for OPEN / PARTIAL / CLOSED.
+    partial_low: float = Field(default=0.4, ge=0, le=1)
+    partial_high: float = Field(default=0.6, ge=0, le=1)
+
+    # Confidence below which we report UNKNOWN even when patches are present.
+    confidence_threshold: float = Field(default=0.55, ge=0, le=1)
+
+    # ---- Fallbacks / safety ----
+    # If the detector or landmarks fail we report UNKNOWN; this flag is kept
+    # only for emergency operational rollback and must remain false in prod.
+    enable_heuristic_fallback: bool = Field(default=False)
 
     model_config = SettingsConfigDict(env_prefix="ML1_", extra="ignore")
+
+    def model_path(self, filename: str) -> Path:
+        return self.models_dir / filename
 
 
 settings = Settings()

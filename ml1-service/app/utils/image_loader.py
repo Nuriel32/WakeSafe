@@ -19,6 +19,14 @@ def _decode_base64_image(image_base64: str) -> bytes:
 
 
 def _download_image(image_url: str) -> bytes:
+    if image_url.startswith("file://") or image_url[1:3] == ":\\" or image_url.startswith("/"):
+        # Local file path support is used by evaluation scripts and dev runs.
+        path = image_url[len("file://") :] if image_url.startswith("file://") else image_url
+        try:
+            with open(path, "rb") as fh:
+                return fh.read()
+        except OSError as exc:
+            raise ValueError(f"Unable to read local image: {path}") from exc
     try:
         response = requests.get(image_url, timeout=settings.request_timeout_seconds)
         response.raise_for_status()

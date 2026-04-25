@@ -1,0 +1,76 @@
+{
+  "dataset_root": "datasets/mrlEyes_2018_01/mrlEyes_2018_01",
+  "sample_count": 200,
+  "open_count": 100,
+  "closed_count": 100,
+  "feature_stats": {
+    "open_mean_luma_avg": 77.7227,
+    "closed_mean_luma_avg": 81.422,
+    "open_std_luma_avg": 17.6187,
+    "closed_std_luma_avg": 12.76
+  },
+  "baseline": {
+    "accuracy": 0.515,
+    "balanced_accuracy": 0.515,
+    "open_recall": 0.06,
+    "closed_recall": 0.97,
+    "open_as_open": 6,
+    "open_as_closed": 94,
+    "closed_as_open": 3,
+    "closed_as_closed": 97,
+    "pred_OPEN": 1,
+    "pred_CLOSED": 191,
+    "pred_PARTIAL": 2,
+    "pred_UNKNOWN": 6
+  },
+  "best": {
+    "accuracy": 0.635,
+    "balanced_accuracy": 0.635,
+    "open_recall": 0.47,
+    "closed_recall": 0.8,
+    "open_as_open": 47,
+    "open_as_closed": 53,
+    "closed_as_open": 20,
+    "closed_as_closed": 80,
+    "pred_OPEN": 60,
+    "pred_CLOSED": 133,
+    "pred_PARTIAL": 1,
+    "pred_UNKNOWN": 6
+  },
+  "best_params": {
+    "no_eyes_mean_low": 55.0,
+    "no_eyes_mean_high": 225.0,
+    "no_eyes_std_max": 10.0,
+    "closed_mean_luma_threshold": 130.0,
+    "closed_std_luma_threshold": 55.0,
+    "closed_high_mean_luma_threshold": 168.0,
+    "closed_high_std_luma_threshold": 52.0,
+    "open_std_luma_threshold": 16.74,
+    "open_mid_std_luma_threshold": 13.92,
+    "open_mid_mean_luma_max": 78.08,
+    "partial_band_mean_min": 132.0,
+    "partial_band_mean_max": 133.5,
+    "partial_band_std_min": 52.5,
+    "partial_band_std_max": 16.639999999999997,
+    "closed_mid_mean_luma_max": 90.2,
+    "closed_mid_std_luma_max": 13.32,
+    "partial_mean_luma_threshold": 145.0,
+    "partial_std_luma_threshold": 60.0
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "balanced_accuracy": 0.635,
+      "accuracy": 0.635,
+      "open_recall": 0.47,
+      "closed_recall": 0.8
+    },
+    {
+      "cycle": 2,
+      "balanced_accuracy": 0.635,
+      "accuracy": 0.635,
+      "open_recall": 0.47,
+      "closed_recall": 0.8
+    }
+  ]
+}

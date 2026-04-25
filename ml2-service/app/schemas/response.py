@@ -9,6 +9,7 @@ class FeatureResponse(BaseModel):
     avg_eye_closure_time: float = Field(ge=0)
     max_eye_closure_time: float = Field(ge=0)
     closed_eye_ratio: float = Field(ge=0, le=1)
+    frame_count: int = Field(ge=1, description="Frames in the analyzed sequence")
 
 
 class ML2AnalyzeResponse(BaseModel):
