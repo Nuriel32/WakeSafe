@@ -19,6 +19,10 @@ class FrameAnalysisResponse(BaseModel):
     head_pose: HeadPoseResponse
     processing_time_ms: int = Field(ge=0)
     processed_at: datetime
+    model_version: Optional[str] = None
+    p_open: Optional[float] = Field(default=None, ge=0, le=1)
+    p_closed: Optional[float] = Field(default=None, ge=0, le=1)
+    eyes_used: Optional[int] = Field(default=None, ge=0)
 
 
 class ML1PredictResponse(BaseModel):
