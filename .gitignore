@@ -94,3 +94,11 @@ ios/
 # Package locks generated per package manager (keep npm lockfile)
 yarn.lock
 pnpm-lock.yaml
+
+# ML training run outputs (keep code + model card, drop checkpoints/logs)
+training/runs/
+.venv-ml/
+
+# Local debugging crops produced during ml1-service inference experiments
+ml1-service/models/debug_crops/
+ml1-service/models/debug_crops2/

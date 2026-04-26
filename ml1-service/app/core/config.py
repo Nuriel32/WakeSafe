@@ -32,22 +32,24 @@ class Settings(BaseSettings):
     landmarks_xml: str = Field(default="landmarks-regression-retail-0009.xml")
 
     # Eye state classifier (OpenVINO IR with baked preprocessing).
-    eye_classifier_xml: str = Field(default="open_closed_eye_ir.xml")
-    eye_classifier_onnx: str = Field(default="open_closed_eye.onnx")
+    # Defaults point to ``wakesafe-eye-vX.Y.Z`` — a custom CNN trained in
+    # this repo on a subject-held-out split of the MRL Eye Dataset (see
+    # ``training/MODEL_CARD.md``). Use the legacy ``open_closed_eye_ir.xml``
+    # only as an emergency rollback target.
+    eye_classifier_xml: str = Field(default="wakesafe-eye-v1.0.0.xml")
+    eye_classifier_onnx: str = Field(default="wakesafe-eye-v1.0.0.onnx")
 
-    # The classifier output index for the "open" class. Documented as 0 in
-    # the public model card, but in practice the trained ONNX returns
-    # [closed, open]; verified empirically on MRL Eye Dataset (~95% acc).
+    # Output index for the "open" class. ``WakeSafeEyeNet`` is trained with
+    # labels {0=closed, 1=open}, so open=1 (matches the empirically-verified
+    # mapping of ``open-closed-eye-0001`` as well).
     eye_classifier_open_index: int = Field(default=1, ge=0, le=1)
 
     # ---- Model identity ----
-    model_version: str = Field(
-        default="open-closed-eye-0001+landmarks-0009+face-retail-0004"
-    )
+    model_version: str = Field(default="wakesafe-eye-v1.0.0")
     model_checksum_sha384: str = Field(
         default=(
-            "2615bce53b55620c629db21b043057600ccc53466f053c0a8277c43577c2db21"
-            "e48f330cf9b15213016d17cddb8cba27"
+            "927c44a3e8a860749ec5a06cc4bcae3d44b007112b1d8c529226163fecb764c3"
+            "e206385624b1bb59f3d08f9eda34c2e8"
         )
     )
     runtime: Literal["openvino", "onnxruntime"] = Field(default="openvino")

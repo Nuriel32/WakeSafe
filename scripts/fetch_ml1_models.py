@@ -1,10 +1,18 @@
 #!/usr/bin/env python
-"""Download ML1 model artifacts (face detector, landmarks, eye classifier).
+"""Download ML1 model artifacts.
 
-Downloads the public OpenVINO open_model_zoo artifacts that the new ML1
-pipeline relies on and writes them under ``ml1-service/models``. Verifies
-the eye classifier checksum against the value declared in the upstream
-``model.yml``.
+ML1 ships with the **WakeSafe Eye-State CNN** (`wakesafe-eye-vX.Y.Z`),
+trained in this repository under ``training/`` and committed to
+``ml1-service/models/``. This script does **not** redownload that model —
+it is owned and versioned in-repo.
+
+Two upstream Intel models are still used for face localization:
+
+* ``face-detection-retail-0004`` — face bounding box.
+* ``landmarks-regression-retail-0009`` — 5-point landmarks for eye centers.
+
+The legacy public eye classifier ``open-closed-eye-0001`` can optionally
+be downloaded as an emergency rollback target via ``--fetch-legacy-eye``.
 """
 
 from __future__ import annotations
@@ -76,24 +84,15 @@ def build_ir(out_dir: pathlib.Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUT))
+    parser.add_argument(
+        "--fetch-legacy-eye",
+        action="store_true",
+        help="Also download the legacy open-closed-eye-0001 ONNX as a fallback target.",
+    )
     args = parser.parse_args()
 
     out_dir = pathlib.Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    eye_path = out_dir / "open_closed_eye.onnx"
-    if not eye_path.exists():
-        download(EYE_ONNX_URL, eye_path)
-    actual = sha384(eye_path)
-    if actual != EYE_ONNX_SHA384:
-        print(
-            f"ERROR: open_closed_eye.onnx checksum mismatch\n"
-            f"  expected: {EYE_ONNX_SHA384}\n"
-            f"  actual:   {actual}",
-            file=sys.stderr,
-        )
-        return 1
-    print(f"   sha384 verified: {actual}")
 
     for name in INTEL_MODELS:
         for ext in ("xml", "bin"):
@@ -102,7 +101,29 @@ def main() -> int:
                 continue
             download(INTEL_BASE.format(name=name, ext=ext), target)
 
-    build_ir(out_dir)
+    if args.fetch_legacy_eye:
+        eye_path = out_dir / "open_closed_eye.onnx"
+        if not eye_path.exists():
+            download(EYE_ONNX_URL, eye_path)
+        actual = sha384(eye_path)
+        if actual != EYE_ONNX_SHA384:
+            print(
+                f"ERROR: open_closed_eye.onnx checksum mismatch\n"
+                f"  expected: {EYE_ONNX_SHA384}\n"
+                f"  actual:   {actual}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"   sha384 verified: {actual}")
+        build_ir(out_dir)
+
+    primary = out_dir / "wakesafe-eye-v1.0.0.onnx"
+    if not primary.exists():
+        print(
+            "WARNING: wakesafe-eye-v1.0.0.onnx not found in models/.\n"
+            "Train and export it with `python -m training.train` and `python -m training.export`."
+        )
+
     print("done.")
     return 0
 

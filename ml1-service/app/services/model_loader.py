@@ -144,12 +144,22 @@ class EyeStateModelProvider:
             eye_patch = cv2.cvtColor(eye_patch, cv2.COLOR_GRAY2BGR)
         resized = cv2.resize(eye_patch, (32, 32)).astype(np.float32)
         tensor = np.transpose(resized, (2, 0, 1))[None, ...]
-        out = self._eye_model(tensor)[self._eye_output].reshape(-1)
+        out = self._eye_model(tensor)[self._eye_output].reshape(-1).astype(np.float64)
+
+        # The trained ``WakeSafeEyeNet`` exports raw logits and the public
+        # ``open-closed-eye-0001`` IR exports already-softmaxed probabilities.
+        # Applying softmax here is idempotent for the latter (a softmax of a
+        # probability vector close to a one-hot is itself close to one-hot)
+        # while making the former produce valid probabilities in ``[0, 1]``.
+        out = out - out.max()
+        exp = np.exp(out)
+        probs = exp / exp.sum()
+
         open_idx = settings.eye_classifier_open_index
         closed_idx = 1 - open_idx
         return EyeProbabilities(
-            p_open=float(out[open_idx]),
-            p_closed=float(out[closed_idx]),
+            p_open=float(probs[open_idx]),
+            p_closed=float(probs[closed_idx]),
         )
 
     # ---- helpers ----
