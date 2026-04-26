@@ -44,7 +44,7 @@ def main() -> int:
     args = parser.parse_args()
 
     ckpt_path = Path(args.checkpoint)
-    state = torch.load(ckpt_path, map_location="cpu")
+    state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     model = WakeSafeEyeNet()
     model.load_state_dict(state)
     model.eval()
