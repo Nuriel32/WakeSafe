@@ -81,6 +81,9 @@ export const DashboardScreen: React.FC = () => {
       websocketService.setOnNotification((data) => {
         const message = data?.message || 'Important safety alert received';
         if (data?.type === 'warning' || data?.type === 'error') {
+          alertAudioService.playFatigueAlert().catch((error) => {
+            console.warn('Failed to play notification alert sound:', error);
+          });
           Alert.alert('WakeSafe Alert', message, [{ text: 'OK' }], { cancelable: false });
         } else {
           showToast(message, 'info');
@@ -106,6 +109,9 @@ export const DashboardScreen: React.FC = () => {
 
     // Show alert based on severity
     if (alert.alert.actionRequired) {
+      alertAudioService.playFatigueAlert().catch((error) => {
+        console.warn('Failed to play fatigue alert sound:', error);
+      });
       Alert.alert(
         '⚠️ FATIGUE ALERT',
         alert.alert.message,
@@ -116,6 +122,9 @@ export const DashboardScreen: React.FC = () => {
         { cancelable: false }
       );
     } else if (alert.alert.severity === 'medium') {
+      alertAudioService.playFatigueAlert().catch((error) => {
+        console.warn('Failed to play fatigue alert sound:', error);
+      });
       Alert.alert('⚠️ Drowsiness Detected', alert.alert.message);
     }
   };
