@@ -4,3 +4,7 @@ pydantic
 pydantic-settings
 requests
 pillow
+numpy
+opencv-python-headless
+onnxruntime
+openvino>=2024.0,<2025.0

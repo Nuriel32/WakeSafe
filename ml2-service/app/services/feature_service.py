@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.core.config import settings
 from app.schemas.request import SequenceItem
 
 
@@ -9,18 +10,25 @@ class TemporalFeatures:
     avg_eye_closure_time: float
     max_eye_closure_time: float
     closed_eye_ratio: float
+    frame_count: int
 
 
 class TemporalFeatureService:
     # Count only explicit CLOSED frames as eye closure.
-    # Treating PARTIAL as closed caused aggressive false positives.
+    # PARTIAL contributes via a lower weight configured in settings.
     closed_states = {"CLOSED"}
+    partial_states = {"PARTIAL"}
 
     def extract(self, sequence: list[SequenceItem]) -> TemporalFeatures:
         ordered = sorted(sequence, key=lambda item: item.timestamp)
         total = len(ordered)
-        closed_count = sum(1 for item in ordered if item.eye_state in self.closed_states)
-        closed_eye_ratio = closed_count / total if total else 0.0
+        weighted_closed_count = 0.0
+        for item in ordered:
+            if item.eye_state in self.closed_states:
+                weighted_closed_count += 1.0
+            elif item.eye_state in self.partial_states:
+                weighted_closed_count += settings.partial_as_closed_weight
+        closed_eye_ratio = weighted_closed_count / total if total else 0.0
 
         total_seconds = (
             (ordered[-1].timestamp - ordered[0].timestamp).total_seconds() if total > 1 else 0.0
@@ -32,7 +40,9 @@ class TemporalFeatureService:
         run_start_idx = None
 
         for idx, item in enumerate(ordered):
-            is_closed = item.eye_state in self.closed_states
+            is_closed = item.eye_state in self.closed_states or (
+                item.eye_state in self.partial_states and settings.partial_as_closed_weight >= 0.5
+            )
             if is_closed and run_start_idx is None:
                 run_start_idx = idx
             if not is_closed and run_start_idx is not None:
@@ -57,6 +67,7 @@ class TemporalFeatureService:
             avg_eye_closure_time=round(avg_eye_closure_time, 4),
             max_eye_closure_time=round(max_eye_closure_time, 4),
             closed_eye_ratio=round(closed_eye_ratio, 4),
+            frame_count=total,
         )
 
     @staticmethod

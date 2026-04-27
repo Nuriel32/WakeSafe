@@ -14,6 +14,10 @@ class DecisionResult:
 
 class RuleBasedDecisionEngine:
     def decide(self, features: TemporalFeatures) -> DecisionResult:
+        # Not enough temporal evidence yet (e.g. first frame has closed_eye_ratio=1.0 by definition).
+        if features.frame_count < settings.min_frames_for_fatigue:
+            return DecisionResult(driver_state="alert", fatigued=False, severity=0.05)
+
         closed_ratio = features.closed_eye_ratio
         avg_closure = features.avg_eye_closure_time
         blink_rate = features.blink_rate

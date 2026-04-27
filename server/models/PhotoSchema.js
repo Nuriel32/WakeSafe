@@ -30,6 +30,9 @@ const photoSchema = new mongoose.Schema({
     aiResults: {
         confidence: { type: Number, min: 0, max: 1 },
         ear: { type: Number }, // Eye Aspect Ratio
+        eyeState: { type: String, enum: ['OPEN', 'CLOSED', 'PARTIAL', 'UNKNOWN'] },
+        visionStatus: { type: String, enum: ['ok', 'no_eyes_detected'] },
+        guidanceMessage: { type: String },
         headPose: {
             pitch: { type: Number },
             yaw: { type: Number },
@@ -109,6 +112,9 @@ photoSchema.methods.updateAIResults = function(results) {
     this.aiResults = {
         confidence: results.confidence,
         ear: results.ear,
+        eyeState: results.eyeState,
+        visionStatus: results.visionStatus,
+        guidanceMessage: results.guidanceMessage,
         headPose: results.headPose,
         processingTime: results.processingTime,
         processedAt: new Date()
