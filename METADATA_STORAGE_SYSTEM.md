@@ -310,15 +310,6 @@ The WakeSafe system now includes comprehensive metadata storage across MongoDB a
     isActive: Boolean
   }],
   
-  // Subscription and Billing
-  subscription: {
-    plan: String,                // 'free', 'premium', 'enterprise'
-    status: String,              // 'active', 'cancelled', 'expired'
-    startDate: Date,
-    endDate: Date,
-    autoRenew: Boolean
-  },
-  
   // Security and Access
   security: {
     twoFactorEnabled: Boolean,
@@ -473,11 +464,8 @@ The WakeSafe system now includes comprehensive metadata storage across MongoDB a
     }]
   },
   
-  // Business Metrics
-  business: {
-    revenue: Number,             // in cents
-    subscriptions: Number,
-    churnRate: Number,           // percentage
+  // Product Metrics
+  product: {
     customerSatisfaction: Number, // 1-10 scale
     supportTickets: Number,
     featureUsage: [{
@@ -533,7 +521,6 @@ user:{userId} = {
   usageStats: Object,
   preferences: Object,
   devices: Array,
-  subscription: Object,
   cachedAt: String
 }
 TTL: 1 hour
@@ -673,12 +660,10 @@ Real-time Dashboard: Live updates
 - Geographic distribution
 - Device/platform statistics
 
-### **3. Business Intelligence**
+### **3. Product Intelligence**
 - User engagement metrics
 - Feature usage statistics
-- Revenue and subscription data
 - Customer satisfaction scores
-- Churn analysis
 
 ## 🔧 Implementation Examples
 

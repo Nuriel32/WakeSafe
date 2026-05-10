@@ -29,13 +29,12 @@ File: `server/models/Users.js`. Collection: `users`.
 | `usageStats` | embedded counters | default zeros | `totalSessions`, `totalDrivingTime`, `totalPhotosUploaded`, `totalPhotosProcessed`, `totalAlerts`, `totalDrowsyDetections`, `totalSleepingDetections`, `avgSessionDuration`, `lastSessionDate`. |
 | `preferences` | embedded object | defaults | `notifications`, `privacy`, `app`. |
 | `devices` | embedded array | | each item: `deviceId`, `platform`, `os`, `appVersion`, `model`, `lastSeen`, `isActive`. |
-| `subscription` | embedded object | defaults | `plan`, `status`, `startDate`, `endDate`, `autoRenew`. |
 | `security` | embedded object | defaults | `twoFactorEnabled`, `twoFactorSecret`, `loginAttempts`, `lockUntil`, `lastPasswordChange`. |
 | `activityLog` | embedded array | | `action`, `timestamp`, `ipAddress`, `userAgent`, `deviceId`, `metadata`. |
 | `createdAt`, `updatedAt` | `Date` | timestamps | |
 
 #### Indexes
-`email`, `phone`, `carNumber`, `isActive`, `lastLogin`, `usageStats.totalSessions`, `usageStats.totalAlerts`, `devices.deviceId`, `subscription.plan`, `subscription.status`.
+`email`, `phone`, `carNumber`, `isActive`, `lastLogin`, `usageStats.totalSessions`, `usageStats.totalAlerts`, `devices.deviceId`.
 
 #### Instance methods
 

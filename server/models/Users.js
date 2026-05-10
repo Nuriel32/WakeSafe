@@ -94,15 +94,6 @@ const userSchema = new mongoose.Schema({
     isActive: { type: Boolean, default: true }
   }],
   
-  // Subscription and Billing
-  subscription: {
-    plan: { type: String, default: 'free' },
-    status: { type: String, default: 'active' },
-    startDate: { type: Date },
-    endDate: { type: Date },
-    autoRenew: { type: Boolean, default: false }
-  },
-
   // Security and Access
   security: {
     twoFactorEnabled: { type: Boolean, default: false },
@@ -131,9 +122,7 @@ const userSchema = new mongoose.Schema({
     { lastLogin: -1 },
     { 'usageStats.totalSessions': -1 },
     { 'usageStats.totalAlerts': -1 },
-    { 'devices.deviceId': 1 },
-    { 'subscription.plan': 1 },
-    { 'subscription.status': 1 }
+    { 'devices.deviceId': 1 }
   ]
 });
 
