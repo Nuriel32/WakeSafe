@@ -79,14 +79,6 @@ Loaded by `server/app.js` from one of:
 | `SAFE_STOP_RECOMMENDATION_COOLDOWN_MS` | `120000` | Safe-stop emit cooldown. |
 | `ML_WEBHOOK_API_KEY` | (required for `/api/fatigue/ml-detection`) | Shared secret expected in `x-ml-api-key`. |
 
-### Spotify
-
-| Variable | Required | Purpose |
-|---|---|---|
-| `SPOTIFY_CLIENT_ID` | yes (if Spotify enabled) | OAuth client. |
-| `SPOTIFY_CLIENT_SECRET` | yes | OAuth secret. |
-| `SPOTIFY_REDIRECT_URI` | yes | OAuth callback URL. |
-
 ### Google Maps
 
 | Variable | Required | Purpose |

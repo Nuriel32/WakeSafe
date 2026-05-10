@@ -48,7 +48,7 @@ async function main() {
     'performanceMetrics.batteryUsage': '',
   };
 
-  // Users: keep as-is (large schema but may be used by Spotify/Profile screen).
+  // Users: keep as-is (large schema is used by the Profile screen).
 
   const photoResult = await photos.updateMany({}, { $unset: photoUnset });
   console.log('[migration] photos $unset modified:', photoResult.modifiedCount);

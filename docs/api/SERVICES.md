@@ -127,10 +127,6 @@ Wraps Google Maps Places + Directions APIs.
 
 Lightweight observability hooks. Exposes `trackFailure`, `trackWarning`, `trackEvent`. Failures from background tasks (e.g., WebSocket disconnects, Google Maps errors) are recorded here instead of crashing the request.
 
-### `spotifyService` — `server/services/spotifyService.js`
-
-Spotify OAuth + Web API wrapper. Used by the controllers under `/api/spotify`.
-
 ### `fatigueService` — `server/services/fatigueService.js`
 
 Legacy direct fatigue computation used by `POST /api/fatigue/`. Calls the AI server's `analyze_fatigue` endpoint with raw image data and stores a `FatigueLog`.

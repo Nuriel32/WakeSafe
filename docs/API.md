@@ -6,7 +6,7 @@ This document is the entry point for all API documentation in the WakeSafe proje
 
 | Document | Scope |
 |---|---|
-| [`api/REST.md`](./api/REST.md) | Backend REST API (Node.js + Express). Auth, sessions, photos, fatigue, uploads, location, Spotify. |
+| [`api/REST.md`](./api/REST.md) | Backend REST API (Node.js + Express). Auth, sessions, photos, fatigue, uploads, location. |
 | [`api/WEBSOCKET.md`](./api/WEBSOCKET.md) | Real-time Socket.IO contract (client → server, server → client events). |
 | [`api/ML1_SERVICE.md`](./api/ML1_SERVICE.md) | Frame-level eye-state classifier service (FastAPI). Endpoints, classes, schemas. |
 | [`api/ML2_SERVICE.md`](./api/ML2_SERVICE.md) | Temporal fatigue decision service (FastAPI). Endpoints, classes, schemas. |

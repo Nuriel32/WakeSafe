@@ -272,27 +272,6 @@ Return navigation recommendations (e.g., nearest safe stops) based on driver loc
 
 ---
 
-## Spotify — `/api/spotify`
-
-Optional integration for in-car music control.
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/callback` | public | Spotify OAuth callback. |
-| `GET` | `/login` | yes | Redirects to Spotify auth. |
-| `GET` | `/login-url` | yes | Returns the Spotify login URL. |
-| `GET` | `/status` | yes | Returns connection status. |
-| `GET` | `/me` | yes | Spotify profile of the connected account. |
-| `GET` | `/playlists` | yes | List the user's playlists. |
-| `GET` | `/playlists/:id` | yes | Tracks of a playlist. |
-| `GET` | `/player/current` | yes | Current playback state. |
-| `PUT` | `/player/play` | yes | Play. |
-| `PUT` | `/player/pause` | yes | Pause. |
-| `POST` | `/player/next` | yes | Next track. |
-| `POST` | `/player/previous` | yes | Previous track. |
-
----
-
 ## Health and debug
 
 | Method | Path | Description |
@@ -310,5 +289,5 @@ Configured in `server/middlewares/rateLimit.js`. Routes use:
 
 - `authLimiter` — `/api/auth/*`
 - `uploadLimiter` and `presignedUploadLimiter` — `/api/upload/*`
-- `apiLimiter` — `/api/users`, `/api/sessions`, `/api/fatigue`, `/api/location`, `/api/photos`, `/api/spotify`
+- `apiLimiter` — `/api/users`, `/api/sessions`, `/api/fatigue`, `/api/location`, `/api/photos`
 - `generalLimiter` — global fallback

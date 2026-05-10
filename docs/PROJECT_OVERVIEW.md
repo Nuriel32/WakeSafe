@@ -99,7 +99,6 @@ What makes the solution distinctive:
 - **Authentication and security** — JWT-based with revocation tracked in Redis; rate limiting and CORS allow-listing.
 - **Cache-busting and deduplication** — the same photo or event is never processed or alerted twice.
 - **Observability** — structured logging, monitoring service hooks, and per-photo processing metrics.
-- **Spotify integration** — optional, lets drivers control music without leaving the app.
 
 ---
 

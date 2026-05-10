@@ -30,7 +30,6 @@ File: `server/models/Users.js`. Collection: `users`.
 | `preferences` | embedded object | defaults | `notifications`, `privacy`, `app`. |
 | `devices` | embedded array | | each item: `deviceId`, `platform`, `os`, `appVersion`, `model`, `lastSeen`, `isActive`. |
 | `subscription` | embedded object | defaults | `plan`, `status`, `startDate`, `endDate`, `autoRenew`. |
-| `spotify` | embedded object | optional | `isConnected`, `spotifyUserId`, `accessToken` (select:false), `refreshToken` (select:false), `tokenExpiresAt` (select:false), `connectedAt`, `lastSyncAt`. |
 | `security` | embedded object | defaults | `twoFactorEnabled`, `twoFactorSecret`, `loginAttempts`, `lockUntil`, `lastPasswordChange`. |
 | `activityLog` | embedded array | | `action`, `timestamp`, `ipAddress`, `userAgent`, `deviceId`, `metadata`. |
 | `createdAt`, `updatedAt` | `Date` | timestamps | |

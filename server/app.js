@@ -133,7 +133,6 @@ app.use('/api/sessions', apiLimiter, require('./routes/sessionRoutes'));
 app.use('/api/fatigue', apiLimiter, require('./routes/fatigueRoutes'));
 app.use('/api/location', apiLimiter, require('./routes/locationRoutes'));
 app.use('/api/photos', apiLimiter, require('./routes/photoRoutes'));
-app.use('/api/spotify', apiLimiter, require('./routes/spotifyRoutes'));
 
 // Apply general rate limiting to all other routes
 app.use(generalLimiter);
