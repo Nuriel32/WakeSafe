@@ -19,6 +19,7 @@ import { ProfileScreen } from './src/screens/main/ProfileScreen';
 import { useAuth, AuthProvider } from './src/hooks/useAuth';
 import { SessionProvider } from './src/hooks/useSession';
 import { ToastProvider } from './src/components/feedback/ToastProvider';
+import { WebSocketStatusGate } from './src/components/feedback/WebSocketStatusGate';
 import { colors } from './src/theme/tokens';
 
 // Types
@@ -113,6 +114,7 @@ function AppInner() {
     <SafeAreaProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
+        <WebSocketStatusGate />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isAuthenticated ? (
             <Stack.Screen name="Main" component={MainNavigator} />

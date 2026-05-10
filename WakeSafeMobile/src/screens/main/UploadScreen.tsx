@@ -131,7 +131,7 @@ export const UploadScreen: React.FC = () => {
         showToast(message, 'info');
       }
     });
-    websocketService.setOnConnectionChange((connected) => {
+    const unsubscribeConnection = websocketService.addConnectionChangeListener((connected) => {
       if (connected) {
         loadCurrentSession();
       }
@@ -139,6 +139,7 @@ export const UploadScreen: React.FC = () => {
 
     return () => {
       console.log('UploadScreen: Cleaning up camera service...');
+      unsubscribeConnection();
       cameraService.stopCapturing();
       photoUploadService.cancelAllUploads();
     };

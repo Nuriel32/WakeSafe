@@ -64,42 +64,40 @@ export const DashboardScreen: React.FC = () => {
 
   // WebSocket connection and event handling
   useEffect(() => {
-    if (token && user) {
-      // Set up WebSocket event handlers
-      websocketService.setOnFatigueAlert(handleFatigueAlert);
-      websocketService.setOnConnectionChange((connected) => {
-        setIsWebSocketConnected(connected);
-        if (connected) {
-          loadCurrentSession();
-          loadSessionHistory();
-        }
-      });
-      websocketService.setOnError((error) => {
-        console.error('WebSocket error:', error);
-        showToast(`Connection error: ${error}`, 'error');
-      });
-      websocketService.setOnNotification((data) => {
-        const message = data?.message || 'Important safety alert received';
-        if (data?.type === 'warning' || data?.type === 'error') {
-          alertAudioService.playFatigueAlert().catch((error) => {
-            console.warn('Failed to play notification alert sound:', error);
-          });
-          Alert.alert('WakeSafe Alert', message, [{ text: 'OK' }], { cancelable: false });
-        } else {
-          showToast(message, 'info');
-        }
-      });
+    if (!token || !user) return;
 
-      // Connect to WebSocket
-      websocketService.connect(token).catch((error) => {
-        console.error('Failed to connect to WebSocket:', error);
-        showToast('Live updates unavailable. Running in degraded mode.', 'info');
-      });
+    websocketService.setOnFatigueAlert(handleFatigueAlert);
+    websocketService.setOnNotification((data) => {
+      const message = data?.message || 'Important safety alert received';
+      if (data?.type === 'warning' || data?.type === 'error') {
+        alertAudioService.playFatigueAlert().catch((alertError) => {
+          console.warn('Failed to play notification alert sound:', alertError);
+        });
+        Alert.alert('WakeSafe Alert', message, [{ text: 'OK' }], { cancelable: false });
+      } else {
+        showToast(message, 'info');
+      }
+    });
 
-      return () => {
-        websocketService.disconnect();
-      };
-    }
+    const unsubscribeConnection = websocketService.addConnectionChangeListener((connected) => {
+      setIsWebSocketConnected(connected);
+      if (connected) {
+        loadCurrentSession();
+        loadSessionHistory();
+      }
+    });
+
+    // Connect to WebSocket. Recoverable failures are handled by the central
+    // status gate (offline toast + forced logout after retries exhausted), so
+    // we just log here instead of surfacing a per-screen toast on every blip.
+    websocketService.connect(token).catch((error) => {
+      console.warn('Initial WebSocket connect failed (will auto-retry):', error?.message || error);
+    });
+
+    return () => {
+      unsubscribeConnection();
+      websocketService.disconnect();
+    };
   }, [token, user, loadCurrentSession, loadSessionHistory, showToast]);
 
   const handleFatigueAlert = (alert: FatigueAlert) => {

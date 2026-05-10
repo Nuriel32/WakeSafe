@@ -5,7 +5,9 @@ import { colors, radius, spacing } from "../../theme/tokens";
 type Tone = "success" | "error" | "info";
 type ToastState = { message: string; tone: Tone } | null;
 
-const ToastContext = createContext<{ showToast: (message: string, tone?: Tone) => void }>({
+const DEFAULT_TOAST_DURATION_MS = 2600;
+
+const ToastContext = createContext<{ showToast: (message: string, tone?: Tone, durationMs?: number) => void }>({
   showToast: () => undefined,
 });
 
@@ -17,12 +19,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const api = useMemo(
     () => ({
-      showToast: (message: string, tone: Tone = "info") => {
+      showToast: (message: string, tone: Tone = "info", durationMs: number = DEFAULT_TOAST_DURATION_MS) => {
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
         setToast({ message, tone });
-        timeoutRef.current = setTimeout(() => setToast(null), 2600);
+        timeoutRef.current = setTimeout(() => setToast(null), durationMs);
       },
     }),
     []

@@ -61,24 +61,37 @@ export interface SessionUpdate {
   timestamp: number;
 }
 
+// Cap the auto-reconnect attempts before we give up and force the user
+// back to the login screen. Per product spec: 2-3 retries.
+const MAX_RECONNECT_ATTEMPTS = 3;
+const INITIAL_RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_DELAY_MS = 5000;
+
 class WebSocketService {
   private socket: Socket | null = null;
   private isConnected = false;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
+  private readonly maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+  private readonly reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   private connectionPromise: Promise<boolean> | null = null;
+  private intentionalDisconnect = false;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private lastHeartbeatAckAt = 0;
   private seenEventIds = new Set<string>();
   private readonly seenEventIdsMax = 300;
 
-  // Event handlers
+  // Multi-listener slots (anyone can subscribe, returns unsubscribe fn).
+  // Used for connection lifecycle events that more than one screen / the
+  // app shell need to observe at the same time.
+  private connectionChangeListeners = new Set<(connected: boolean) => void>();
+  private errorListeners = new Set<(error: string) => void>();
+  private reconnectFailedListeners = new Set<() => void>();
+
+  // Per-stream single-handler slots (last writer wins). These are scoped
+  // to a single owning screen so the existing behavior is preserved.
   private onFatigueAlert?: (alert: FatigueAlert) => void;
   private onPhotoCaptureConfirmed?: (event: PhotoCaptureEvent) => void;
   private onSessionUpdate?: (update: SessionUpdate) => void;
-  private onConnectionChange?: (connected: boolean) => void;
-  private onError?: (error: string) => void;
   private onUploadNotification?: (data: any) => void;
   private onUploadProgress?: (data: any) => void;
   private onUploadCompleted?: (data: any) => void;
@@ -92,8 +105,36 @@ class WebSocketService {
     try {
       handler(payload);
     } catch (error) {
-      console.error(`WebSocket handler "${label}" failed:`, error);
+      console.warn(`WebSocket handler "${label}" failed:`, error);
     }
+  }
+
+  private notifyAll<T>(listeners: Set<(payload: T) => void>, payload: T, label: string): void {
+    listeners.forEach((listener) => {
+      try {
+        listener(payload);
+      } catch (error) {
+        console.warn(`WebSocket listener "${label}" failed:`, error);
+      }
+    });
+  }
+
+  private notifyConnectionChange(connected: boolean): void {
+    this.notifyAll(this.connectionChangeListeners, connected, 'connectionChange');
+  }
+
+  private notifyError(message: string): void {
+    this.notifyAll(this.errorListeners, message, 'error');
+  }
+
+  private notifyReconnectFailed(): void {
+    this.reconnectFailedListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch (error) {
+        console.warn('WebSocket listener "reconnectFailed" failed:', error);
+      }
+    });
   }
 
   connect(token: string): Promise<boolean> {
@@ -102,25 +143,43 @@ class WebSocketService {
       return this.connectionPromise;
     }
 
+    this.intentionalDisconnect = false;
+
     this.connectionPromise = new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (ok: boolean, error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        if (ok) {
+          resolve(true);
+        } else {
+          reject(error instanceof Error ? error : new Error(String(error || 'WebSocket connection failed')));
+        }
+      };
+
       try {
         console.log('🔌 Connecting to WebSocket server...');
-        console.log('WebSocket URL:', CONFIG.WS_URL);
-        
+
         // Disconnect existing connection if any
         if (this.socket) {
-          this.socket.disconnect();
+          try {
+            this.socket.removeAllListeners();
+            this.socket.disconnect();
+          } catch (cleanupError) {
+            console.warn('WebSocket previous-socket cleanup failed:', cleanupError);
+          }
+          this.socket = null;
         }
-        
+
         this.socket = io(CONFIG.WS_URL, {
           auth: { token },
           query: {},
           transports: ['websocket', 'polling'],
           timeout: 10000,
           reconnection: true,
-          reconnectionAttempts: 0,
+          reconnectionAttempts: this.maxReconnectAttempts,
           reconnectionDelay: this.reconnectDelay,
-          reconnectionDelayMax: 10000,
+          reconnectionDelayMax: MAX_RECONNECT_DELAY_MS,
           randomizationFactor: 0.5,
           forceNew: false,
           upgrade: true,
@@ -129,69 +188,62 @@ class WebSocketService {
 
         // Connection successful
         this.socket.on('connect', () => {
-          console.log('✅ WebSocket connected successfully!');
-          console.log('Socket ID:', this.socket?.id);
+          console.log('✅ WebSocket connected, id:', this.socket?.id);
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          this.safeInvoke(this.onConnectionChange, true, 'onConnectionChange');
+          this.notifyConnectionChange(true);
           this.startHeartbeat();
-          resolve(true);
+          settle(true);
         });
 
-        // Connection failed
+        // Connection failed (initial attempt or in-flight retry).
+        // Socket.io will keep retrying until reconnectionAttempts is exhausted,
+        // so we DO NOT reject the connect() promise here — that would surface
+        // a recoverable hiccup to the user as a hard failure. We only log a
+        // warning and let `reconnect_failed` close out the flow if it fires.
         this.socket.on('connect_error', (error) => {
-          const socketError = error as Error & {
-            description?: unknown;
-            context?: unknown;
-            type?: string;
-          };
-          console.error('❌ WebSocket connection error:', error);
-          console.error('Error details:', {
-            message: socketError.message,
-            description: socketError.description,
-            context: socketError.context,
-            type: socketError.type,
-            stack: socketError.stack
-          });
-          console.error('Connection URL:', CONFIG.WS_URL);
-          console.error('Token available:', !!token);
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn('WebSocket connect_error:', message);
           this.isConnected = false;
-          this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
+          this.notifyConnectionChange(false);
           this.stopHeartbeat();
-          this.safeInvoke(this.onError, `Connection failed: ${socketError.message}`, 'onError');
-          this.connectionPromise = null;
-          reject(error);
         });
 
         // Disconnected
         this.socket.on('disconnect', (reason) => {
-          console.log('👋 WebSocket disconnected:', reason);
+          console.log('WebSocket disconnected:', reason);
           this.isConnected = false;
-          this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
+          this.notifyConnectionChange(false);
           this.stopHeartbeat();
         });
 
         // Reconnected
         this.socket.on('reconnect', (attemptNumber) => {
-          console.log(`🔄 WebSocket reconnected after ${attemptNumber} attempts`);
+          console.log(`WebSocket reconnected after ${attemptNumber} attempts`);
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          this.safeInvoke(this.onConnectionChange, true, 'onConnectionChange');
+          this.notifyConnectionChange(true);
           this.startHeartbeat();
         });
 
         // Reconnect attempt
         this.socket.on('reconnect_attempt', (attemptNumber) => {
-          console.log(`🔄 WebSocket reconnect attempt ${attemptNumber}`);
+          console.log(`WebSocket reconnect attempt ${attemptNumber}/${this.maxReconnectAttempts}`);
           this.reconnectAttempts = attemptNumber;
         });
 
-        // Reconnect failed
+        // Reconnect failed — exhausted MAX_RECONNECT_ATTEMPTS.
         this.socket.on('reconnect_failed', () => {
-          console.error('❌ WebSocket reconnection failed');
+          console.warn('WebSocket reconnection failed after', this.maxReconnectAttempts, 'attempts');
           this.isConnected = false;
-          this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
-          this.safeInvoke(this.onError, 'Failed to reconnect to server', 'onError');
+          this.notifyConnectionChange(false);
+          this.notifyError('Failed to reconnect to server');
+          this.notifyReconnectFailed();
+          // Tear down the socket so a fresh connect() (after re-login) starts
+          // from a clean slate and doesn't re-fire stale events.
+          this.teardownSocket();
+          this.connectionPromise = null;
+          settle(false, new Error('WebSocket reconnect failed'));
         });
 
         // Server welcome message
@@ -346,25 +398,51 @@ class WebSocketService {
         });
 
       } catch (error) {
-        console.error('💥 Error connecting to WebSocket:', error);
+        console.warn('Error initializing WebSocket:', error);
         this.connectionPromise = null;
-        reject(error);
+        settle(false, error);
       }
     });
 
     return this.connectionPromise;
   }
 
-  disconnect(): void {
-    if (this.socket) {
-      console.log('👋 Disconnecting WebSocket...');
+  /** Quietly drop the underlying socket without notifying listeners. */
+  private teardownSocket(): void {
+    if (!this.socket) return;
+    try {
+      this.socket.removeAllListeners();
       this.socket.disconnect();
-      this.socket = null;
-      this.isConnected = false;
-      this.connectionPromise = null;
-      this.stopHeartbeat();
-      this.safeInvoke(this.onConnectionChange, false, 'onConnectionChange');
+    } catch (error) {
+      console.warn('WebSocket teardown failed:', error);
     }
+    this.socket = null;
+    this.isConnected = false;
+    this.stopHeartbeat();
+  }
+
+  /**
+   * Caller-initiated disconnect (e.g. logout, screen unmount).
+   * Suppresses the offline notification because the user is choosing this.
+   */
+  disconnect(): void {
+    if (!this.socket) {
+      this.connectionPromise = null;
+      return;
+    }
+    console.log('Disconnecting WebSocket (intentional)');
+    this.intentionalDisconnect = true;
+    this.teardownSocket();
+    this.connectionPromise = null;
+    // Tell observers we're offline now so the UI status indicator updates,
+    // but the central status gate uses `intentionalDisconnect` (via
+    // wasIntentionalDisconnect()) to suppress the popup.
+    this.notifyConnectionChange(false);
+  }
+
+  /** True if the most recent disconnect was triggered by disconnect(). */
+  wasIntentionalDisconnect(): boolean {
+    return this.intentionalDisconnect;
   }
 
   // ---- Event Emission Methods ----
@@ -480,12 +558,38 @@ class WebSocketService {
     this.onSessionUpdate = handler;
   }
 
-  setOnConnectionChange(handler: (connected: boolean) => void): void {
-    this.onConnectionChange = handler;
+  /**
+   * Subscribe to connection state changes.
+   * Returns an unsubscribe function — call it from the effect cleanup so
+   * listeners do not leak across screen mounts.
+   */
+  addConnectionChangeListener(listener: (connected: boolean) => void): () => void {
+    this.connectionChangeListeners.add(listener);
+    return () => {
+      this.connectionChangeListeners.delete(listener);
+    };
   }
 
-  setOnError(handler: (error: string) => void): void {
-    this.onError = handler;
+  /**
+   * Subscribe to non-fatal connection error messages.
+   * Returns an unsubscribe function.
+   */
+  addErrorListener(listener: (error: string) => void): () => void {
+    this.errorListeners.add(listener);
+    return () => {
+      this.errorListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Fires once after the configured number of reconnect attempts is exhausted.
+   * Used by the app shell to force a logout and bounce the user to login.
+   */
+  addReconnectFailedListener(listener: () => void): () => void {
+    this.reconnectFailedListeners.add(listener);
+    return () => {
+      this.reconnectFailedListeners.delete(listener);
+    };
   }
 
   setOnUploadNotification(handler: (data: any) => void): void {
