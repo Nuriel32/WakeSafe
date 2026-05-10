@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const locationController = require('../controllers/locationController');
 const auth = require('../middlewares/auth');
-console.log('locationRoutes');
+
 router.post('/navigate', auth, locationController.getNavigationRecommendations);
+router.post('/safe-stops', auth, locationController.getSafeStops);
 
 module.exports = router;

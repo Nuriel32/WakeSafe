@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
 import { useSession } from '../../hooks/useSession';
 import { CONFIG } from '../../config';
@@ -19,10 +20,12 @@ import { alertAudioService } from '../../services/alertAudioService';
 import { EmptyState } from '../../components/feedback/EmptyState';
 import { useToast } from '../../components/feedback/ToastProvider';
 import { toUserMessage } from '../../utils/network';
+import { RootStackParamList } from '../../types';
 
 export const DashboardScreen: React.FC = () => {
   const { user, logout, token } = useAuth();
   const { showToast } = useToast();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { currentSession, startSession, endSession, loading, loadCurrentSession, loadSessionHistory } = useSession();
   const [sessionDuration, setSessionDuration] = useState('00:00:00');
   const [isCapturing, setIsCapturing] = useState(false);
@@ -102,22 +105,34 @@ export const DashboardScreen: React.FC = () => {
     }
   }, [token, user, loadCurrentSession, loadSessionHistory, showToast]);
 
+  const openNavigationScreen = () => {
+    try {
+      navigation.navigate('Navigation');
+    } catch (navError) {
+      console.warn('Failed to open Navigation screen:', navError);
+      showToast('Could not open navigation screen', 'error');
+    }
+  };
+
   const handleFatigueAlert = (alert: FatigueAlert) => {
     console.log('Fatigue alert received:', alert);
     setLastFatigueAlert(alert);
     setFatigueAlerts(prev => [alert, ...prev.slice(0, 9)]); // Keep last 10 alerts
 
-    // Show alert based on severity
+    // Show alert based on severity. The "Confirm" button on every fatigue
+    // alert routes the driver straight into the in-app navigation screen
+    // so they can pick a safe stop right away.
     if (alert.alert.actionRequired) {
       alertAudioService.playFatigueAlert().catch((error) => {
         console.warn('Failed to play fatigue alert sound:', error);
       });
       Alert.alert(
         '⚠️ FATIGUE ALERT',
-        alert.alert.message,
+        `${alert.alert.message}\n\nFind a safe place to pull over.`,
         [
-          { text: 'OK', style: 'default' },
-          { text: 'End Session', style: 'destructive', onPress: () => handleEndSession() }
+          { text: 'Dismiss', style: 'cancel' },
+          { text: 'End Session', style: 'destructive', onPress: () => handleEndSession() },
+          { text: 'Find safe stop', style: 'default', onPress: openNavigationScreen },
         ],
         { cancelable: false }
       );
@@ -125,7 +140,14 @@ export const DashboardScreen: React.FC = () => {
       alertAudioService.playFatigueAlert().catch((error) => {
         console.warn('Failed to play fatigue alert sound:', error);
       });
-      Alert.alert('⚠️ Drowsiness Detected', alert.alert.message);
+      Alert.alert(
+        '⚠️ Drowsiness Detected',
+        `${alert.alert.message}\n\nWould you like to find a nearby safe stop?`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Find safe stop', style: 'default', onPress: openNavigationScreen },
+        ]
+      );
     }
   };
 

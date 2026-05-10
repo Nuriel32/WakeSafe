@@ -14,6 +14,7 @@ import { DashboardScreen } from './src/screens/main/DashboardScreen';
 import { UploadScreen } from './src/screens/main/UploadScreen';
 import { GalleryScreen } from './src/screens/main/GalleryScreen';
 import { ProfileScreen } from './src/screens/main/ProfileScreen';
+import { NavigationScreen } from './src/screens/main/NavigationScreen';
 
 // Hooks
 import { useAuth, AuthProvider } from './src/hooks/useAuth';
@@ -115,7 +116,21 @@ function AppInner() {
         <StatusBar style="auto" />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isAuthenticated ? (
-            <Stack.Screen name="Main" component={MainNavigator} />
+            <>
+              <Stack.Screen name="Main" component={MainNavigator} />
+              <Stack.Screen
+                name="Navigation"
+                component={NavigationScreen}
+                options={{
+                  headerShown: true,
+                  title: 'Find a safe stop',
+                  presentation: 'modal',
+                  headerStyle: { backgroundColor: '#fff' },
+                  headerTitleStyle: { fontWeight: '700', color: '#0f172a' },
+                  headerTintColor: '#2563eb',
+                }}
+              />
+            </>
           ) : (
             <Stack.Screen name="Auth" component={AuthNavigator} />
           )}

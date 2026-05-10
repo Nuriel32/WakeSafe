@@ -113,6 +113,7 @@ export interface AppState {
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
+  Navigation: undefined;
 };
 
 export type AuthStackParamList = {

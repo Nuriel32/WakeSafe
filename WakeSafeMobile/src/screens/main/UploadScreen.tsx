@@ -11,6 +11,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { CameraView, Camera } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,11 +25,13 @@ import { alertAudioService } from '../../services/alertAudioService';
 import { useToast } from '../../components/feedback/ToastProvider';
 import { EmptyState } from '../../components/feedback/EmptyState';
 import { toUserMessage } from '../../utils/network';
+import { RootStackParamList } from '../../types';
 
 export const UploadScreen: React.FC = () => {
   const { currentSession, startSession, endSession, loading: sessionLoading, loadCurrentSession } = useSession();
   const { token, user } = useAuth();
   const { showToast } = useToast();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [cameraPermission, setCameraPermission] = useState<{ granted: boolean; status: string } | null>(null);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -284,14 +287,41 @@ export const UploadScreen: React.FC = () => {
     });
   };
 
+  const openNavigationScreen = () => {
+    try {
+      navigation.navigate('Navigation');
+    } catch (navError) {
+      console.warn('UploadScreen: failed to open Navigation screen:', navError);
+      showToast('Could not open navigation screen', 'error');
+    }
+  };
+
   const handleFatigueAlert = (alert: FatigueAlert) => {
     console.log('UploadScreen: Fatigue alert via WebSocket:', alert);
+    const message = alert.alert?.message || 'Fatigue detected';
+
     if (alert.alert?.actionRequired) {
-      showToast(alert.alert.message || 'Fatigue detected', 'error');
+      Alert.alert(
+        '⚠️ FATIGUE ALERT',
+        `${message}\n\nFind a safe place to pull over.`,
+        [
+          { text: 'Dismiss', style: 'cancel' },
+          { text: 'Find safe stop', style: 'default', onPress: openNavigationScreen },
+        ],
+        { cancelable: false }
+      );
       return;
     }
+
     if (alert.alert?.severity === 'medium') {
-      showToast(alert.alert.message || 'Drowsiness detected', 'info');
+      Alert.alert(
+        '⚠️ Drowsiness Detected',
+        `${message}\n\nWould you like to find a nearby safe stop?`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Find safe stop', style: 'default', onPress: openNavigationScreen },
+        ]
+      );
     }
   };
 
